@@ -118,7 +118,7 @@ rule filter_peptide_ids:
 rule blastp_viral:
     input:
         query = 'data/peptide_dbs/{sample}.faa',
-        gi_list = 'data/bracovirus_ichnovirus_sequence.gi.txt'
+        gi_list = 'data/virus.gi.txt'
     output:
         blastp_res = 'output/viral_blastp/{sample}_blastp.outfmt3'
     params:
