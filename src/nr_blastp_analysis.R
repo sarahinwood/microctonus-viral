@@ -3,23 +3,42 @@ library("data.table")
 ##M.hyp results
 mhyp_nr_blastp <- fread("output/nr_blastp/Mhyp_blastp.outfmt3")
 setnames(mhyp_nr_blastp, old=c("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13"), new=c("peptide_id", "nr_db_id", "%_identical_matches", "alignment_length", "no_mismatches", "no_gap_openings", "query_start", "query_end", "subject_start", "subject_end", "evalue", "bit_score", "annotation"))
-##extract result with lowest evalue for each peptide
-mh_min_evalues <- mhyp_nr_blastp[,.SD[which.min(evalue)], by=peptide_id]
+##order so that in event of eval min. tie, which.min takes hit with highest bitscore
+setorder(mhyp_nr_blastp, peptide_id, evalue, -bit_score)
+##extract result with lowest evalue for each peptide - what if multiple rows with lowest min?
+Mh_min_evalues <- mhyp_nr_blastp[,.SD[which.min(evalue)], by=peptide_id]
+Mh_virus <- dplyr::filter(Mh_min_evalues, grepl('virus', annotation))
+fwrite(Mh_virus, "output/viral_nr_blastp_r/Mh/Mh_viral.csv")
+
+##filter out bro hits somehow???
+Mh_bro <- dplyr::filter(Mh_min_evalues, grepl('', annotation))
 
 ##M.aeth FR results
 Ma_FR_nr_blastp <- fread("output/nr_blastp/Maeth_FR_blastp.outfmt3")
 setnames(Ma_FR_nr_blastp, old=c("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13"), new=c("peptide_id", "nr_db_id", "%_identical_matches", "alignment_length", "no_mismatches", "no_gap_openings", "query_start", "query_end", "subject_start", "subject_end", "evalue", "bit_score", "annotation"))
+##order so that in event of eval min. tie, which.min takes hit with highest bitscore
+setorder(Ma_FR_nr_blastp, peptide_id, evalue, -bit_score)
 ##extract result with lowest evalue for each peptide
 Ma_FR_min_evalues <- Ma_FR_nr_blastp[,.SD[which.min(evalue)], by=peptide_id]
+Ma_FR_virus <- dplyr::filter(Ma_FR_min_evalues, grepl('virus', annotation))
+fwrite(Ma_FR_virus, "output/viral_nr_blastp_r/Ma_FR/Ma_FR_viral.csv")
 
 ##M.aeth IE results
 Ma_IE_nr_blastp <- fread("output/nr_blastp/Maeth_IE_blastp.outfmt3")
 setnames(Ma_IE_nr_blastp, old=c("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13"), new=c("peptide_id", "nr_db_id", "%_identical_matches", "alignment_length", "no_mismatches", "no_gap_openings", "query_start", "query_end", "subject_start", "subject_end", "evalue", "bit_score", "annotation"))
+##order so that in event of eval min. tie, which.min takes hit with highest bitscore
+setorder(Ma_IE_nr_blastp, peptide_id, evalue, -bit_score)
 ##extract result with lowest evalue for each peptide
 Ma_IE_min_evalues <- Ma_IE_nr_blastp[,.SD[which.min(evalue)], by=peptide_id]
+Ma_IE_virus <- dplyr::filter(Ma_IE_min_evalues, grepl('virus', annotation))
+fwrite(Ma_IE_virus, "output/viral_nr_blastp_r/Ma_IE/Ma_IE_viral.csv")
 
 ##M.aeth MA results
 Ma_MA_nr_blastp <- fread("output/nr_blastp/Maeth_MA_blastp.outfmt3")
 setnames(Ma_MA_nr_blastp, old=c("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13"), new=c("peptide_id", "nr_db_id", "%_identical_matches", "alignment_length", "no_mismatches", "no_gap_openings", "query_start", "query_end", "subject_start", "subject_end", "evalue", "bit_score", "annotation"))
+##order so that in event of eval min. tie, which.min takes hit with highest bitscore
+setorder(Ma_MA_nr_blastp, peptide_id, evalue, -bit_score)
 ##extract result with lowest evalue for each peptide
 Ma_MA_min_evalues <- Ma_MA_nr_blastp[,.SD[which.min(evalue)], by=peptide_id]
+Ma_MA_virus <- dplyr::filter(Ma_MA_min_evalues, grepl('virus', annotation))
+fwrite(Ma_MA_virus, "output/viral_nr_blastp_r/Ma_MA/Ma_MA_viral.csv")

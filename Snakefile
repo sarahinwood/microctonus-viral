@@ -58,7 +58,48 @@ all_samples = sorted(set(sample_key['Name']))
 
 rule target:
     input:
-        expand('output/nr_blastp/{sample}_blastp.outfmt3', sample=all_samples)
+        expand('output/nr_blastp/{sample}_blastp.outfmt3', sample=all_samples),
+        exonerate_res = 'output/mh_exonerate/mh_exonerate.out'
+
+rule mh_bro_exonerate:
+    input:
+        bro_peptides = 'output/mh_exonerate/bro_peptides.faa',
+        mh_genome = 'data/Mh_assembly.fa'
+    output:
+        exonerate_res = 'output/mh_exonerate/mh_exonerate.out'
+    threads:
+        50
+    log:
+        'output/logs/mh_exonerate.log'
+    shell:
+        'bin/exonerate-2.2.0-x86_64/bin/exonerate '
+        '--model protein2genome '
+        '{input.bro_peptides} '
+        '{input.mh_genome} '
+        '> {output.exonerate_res} '
+        '2> {log} '
+
+rule filter_bro_peptides:
+    input:
+        peptide_db = 'data/peptide_dbs/Mhyp.faa',
+        peptide_hit_ids = 'output/viral_nr_blastp_r/Mh/mh_bro_peptide_ids.txt'
+    output:
+        bro_peptides = 'output/mh_exonerate/bro_peptides.faa'
+    threads:
+        50
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/filter_bro_peptides.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.peptide_db} '
+        'include=t '
+        'names={input.peptide_hit_ids} '
+        'substring=name '
+        'ignorejunk=t '
+        'out={output.pot_viral_peptides} '
+        '&> {log}'
 
 rule blastp_nr:
     input:
