@@ -59,9 +59,79 @@ all_samples = sorted(set(sample_key['Name']))
 rule target:
     input:
         expand('output/nr_blastp/{sample}_blastp.outfmt3', sample=all_samples),
-        exonerate_res = 'output/mh_exonerate/mh_exonerate.out'
+        'output/mh_exonerate/exonerate_bro_scaffolds.txt',
+        'output/mh_exonerate/mh_trinity_broN_exonerate.out',
+        'output/mh_exonerate/mh_baculoviridae_exonerate.out'
 
-rule mh_bro_exonerate:
+rule mh_transcriptome_baculoviridae_exonerate:
+	input:
+		baculoviridae_genes = 'output/mh_exonerate/baculoviridae_genes.fasta',
+		mh_genome = 'data/Mh_assembly.fa'
+	output:
+		exonerate_res = 'output/mh_exonerate/mh_baculoviridae_exonerate.out'
+	threads:
+		50
+	log:
+		'output/logs/mh_transcriptome_baculoviridae_exonerate.log'
+	shell:
+	    'bin/exonerate-2.2.0-x86_64/bin/exonerate '
+        '--model est2genome '
+        '--score 400 '
+        '{input.baculoviridae_genes} '
+        '{input.mh_genome} '
+        '> {output.exonerate_res} '
+        '2> {log} '
+
+rule filter_baculoviridae_genes:
+	input:
+		baculoviridae_gene_ids = 'output/mh_exonerate/baculoviridae_gene_ids.txt',
+		mh_transcriptome = 'data/mh_transcriptome.fasta'
+	output:
+		baculoviridae_genes = 'output/mh_exonerate/baculoviridae_genes.fasta'
+	threads:
+		50
+	singularity:
+		bbduk_container
+	log:
+		'output/logs/filter_baculoviridae_genes.log'
+	shell:
+	    'filterbyname.sh '
+        'in={input.mh_transcriptome} '
+        'include=t '
+        'names={input.baculoviridae_gene_ids} '
+        'out={output.baculoviridae_genes} '
+        '&> {log}'
+
+rule mh_transcriptome_broN_exonerate:
+	input:
+		broN_genes = 'output/mh_exonerate/bro-n_domain_trinity_genes.fasta',
+		mh_genome = 'data/Mh_assembly.fa'
+	output:
+		exonerate_res = 'output/mh_exonerate/mh_trinity_broN_exonerate.out'
+	threads:
+		50
+	log:
+		'output/logs/mh_transcriptome_broN_exonerate.log'
+	shell:
+	    'bin/exonerate-2.2.0-x86_64/bin/exonerate '
+        '--model est2genome '
+        '--score 400 '
+        '{input.broN_genes} '
+        '{input.mh_genome} '
+        '> {output.exonerate_res} '
+        '2> {log} '
+
+rule grep_scaffolds:
+    input:
+        exonerate_res = 'output/mh_exonerate/mh_exonerate.out'
+    output:
+        bro_scaffolds = 'output/mh_exonerate/exonerate_bro_scaffolds.txt'
+    threads:
+        20
+    shell:
+        'egrep -i "Target: " {input.exonerate_res} > {output.bro_scaffolds} '
+
+rule mh_genome_bro_exonerate:
     input:
         bro_peptides = 'output/mh_exonerate/bro_peptides.faa',
         mh_genome = 'data/Mh_assembly.fa'
@@ -74,6 +144,7 @@ rule mh_bro_exonerate:
     shell:
         'bin/exonerate-2.2.0-x86_64/bin/exonerate '
         '--model protein2genome '
+        '--score 400 '
         '{input.bro_peptides} '
         '{input.mh_genome} '
         '> {output.exonerate_res} '
@@ -159,7 +230,7 @@ rule filter_peptide_ids:
 rule blastp_viral:
     input:
         query = 'data/peptide_dbs/{sample}.faa',
-        gi_list = 'data/virus.gi.txt'
+        gi_list = 'data/gi_lists/virus.gi.txt'
     output:
         blastp_res = 'output/viral_blastp/{sample}_blastp.outfmt3'
     params:
