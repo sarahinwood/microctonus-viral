@@ -58,19 +58,43 @@ all_samples = sorted(set(sample_key['Name']))
 
 rule target:
     input:
+        ##blast results
         expand('output/nr_blastp/{sample}_blastp.outfmt3', sample=all_samples),
-        'output/mh_exonerate/exonerate_bro_scaffolds.txt',
-        'output/mh_exonerate/mh_trinity_broN_exonerate.out',
-        'output/mh_exonerate/mh_baculoviridae_exonerate.out'
+        ##exonerate to map genome bro genes identified with blast onto M.hyp genome
+        'output/mh_exonerate/genome_bro/exonerate_bro_scaffolds.txt',
+        ##exonerate to map transcriptome bro genes onto M.hyp genome
+        'output/mh_exonerate/transcriptome_bro/mh_trinity_broN_exonerate.out',
+        ##exonerate to map transcriptome baculoviridae genes onto M.hyp genome
+        'output/mh_exonerate/transcriptome_baculoviridae/vul_baculo_exonerate.out',
+        ##blast other peptides on the same contigs as genome bro genes
+        'output/nr_blastp/bro_scaffold_peptides_blastp.outfmt3'
 
+
+
+##for exonerate
+##could use this to decrease output size while keeping vulgar output --showalignment no
+##--bestn report best n matches for each query - kind of handy to be abke to search for bro scaffold no.s in full res currently
+
+
+
+
+rule mh_trans_baculoviridae_grep_res:
+    input:
+        baculoviridae_exonerate = 'output/mh_exonerate/transcriptome_baculoviridae/mh_baculoviridae_exonerate.out'
+    output:
+        vulgar_baculoviridae_exonerate = 'output/mh_exonerate/transcriptome_baculoviridae/vul_baculo_exonerate.out'
+    shell:
+        'egrep -i "vulgar:" {input.baculoviridae_exonerate} > {output.vulgar_baculoviridae_exonerate}'
+
+#where do other transriptome baculoviridae genes align to in M.hyp genome?
 rule mh_transcriptome_baculoviridae_exonerate:
 	input:
-		baculoviridae_genes = 'output/mh_exonerate/baculoviridae_genes.fasta',
+		baculoviridae_genes = 'output/mh_exonerate/transcriptome_baculoviridae/baculoviridae_genes.fasta',
 		mh_genome = 'data/Mh_assembly.fa'
 	output:
-		exonerate_res = 'output/mh_exonerate/mh_baculoviridae_exonerate.out'
+		exonerate_res = 'output/mh_exonerate/transcriptome_baculoviridae/mh_baculoviridae_exonerate.out'
 	threads:
-		50
+		20
 	log:
 		'output/logs/mh_transcriptome_baculoviridae_exonerate.log'
 	shell:
@@ -84,10 +108,10 @@ rule mh_transcriptome_baculoviridae_exonerate:
 
 rule filter_baculoviridae_genes:
 	input:
-		baculoviridae_gene_ids = 'output/mh_exonerate/baculoviridae_gene_ids.txt',
+		baculoviridae_gene_ids = 'output/mh_exonerate/transcriptome_baculoviridae/baculoviridae_gene_ids.txt',
 		mh_transcriptome = 'data/mh_transcriptome.fasta'
 	output:
-		baculoviridae_genes = 'output/mh_exonerate/baculoviridae_genes.fasta'
+		baculoviridae_genes = 'output/mh_exonerate/transcriptome_baculoviridae/baculoviridae_genes.fasta'
 	threads:
 		50
 	singularity:
@@ -102,14 +126,15 @@ rule filter_baculoviridae_genes:
         'out={output.baculoviridae_genes} '
         '&> {log}'
 
+#where to M.hyp transcriptome bro genes align to in M.hyp genome?
 rule mh_transcriptome_broN_exonerate:
 	input:
-		broN_genes = 'output/mh_exonerate/bro-n_domain_trinity_genes.fasta',
+		broN_genes = 'output/mh_exonerate/transcriptome_bro/bro-n_domain_trinity_genes.fasta',
 		mh_genome = 'data/Mh_assembly.fa'
 	output:
-		exonerate_res = 'output/mh_exonerate/mh_trinity_broN_exonerate.out'
+		exonerate_res = 'output/mh_exonerate/transcriptome_bro/mh_trinity_broN_exonerate.out'
 	threads:
-		50
+		20
 	log:
 		'output/logs/mh_transcriptome_broN_exonerate.log'
 	shell:
@@ -121,24 +146,119 @@ rule mh_transcriptome_broN_exonerate:
         '> {output.exonerate_res} '
         '2> {log} '
 
+
+##what blastp hits do the other peptides on same scaffolds as bro genes get?
+rule blast_bro_scaffold_peptides:
+    input:
+        bro_scaffold_peptides = 'output/mh_exonerate/genome_bro_scaffolds/bro_scaffold_peptides.fasta'
+    output:
+        blastp_res = 'output/nr_blastp/bro_scaffold_peptides_blastp.outfmt3'
+    params:
+        blast_db = 'bin/db/blastdb/nr/nr'
+    threads:
+        50
+    log:
+        'output/logs/nr_blastp_bro_scaffold_peptides.log'
+    shell:
+        'blastp '
+        '-query {input.bro_scaffold_peptides} '
+        '-db {params.blast_db} '
+        '-num_threads {threads} '
+        '-evalue 1e-05 '
+        '-outfmt "6 std salltitles" > {output.blastp_res} '
+        '2> {log}'
+
+rule filter_bro_scaffold_peptides:
+    input:
+        peptide_list = 'output/mh_exonerate/genome_bro_scaffolds/bro_scaffold_peptide_ids.txt',
+        peptide_db = 'data/peptide_dbs/Mhyp.faa'
+    output:
+        bro_scaffold_peptides = 'output/mh_exonerate/genome_bro_scaffolds/bro_scaffold_peptides.fasta'
+    threads:
+        50
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/filter_bro_scaffold_peptides.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.peptide_db} '
+        'include=t '
+        'names={input.peptide_list} '
+        'substring=name '
+        'ignorejunk=t '
+        'out={output.bro_scaffold_peptides} '
+        '&> {log}'
+
+##what other peptides are on the same scaffolds as the bro genes?
+rule exonerate_bro_scaffolds:
+    input:
+        bro_scaffolds = 'output/mh_exonerate/genome_bro_scaffolds/bro_scaffolds.fasta',
+        mh_peptides = 'data/peptide_dbs/Mhyp.faa'
+    output:
+        exonerate_res = 'output/mh_exonerate/genome_bro_scaffolds/bro_scaffold_exonerate.out'
+    threads:
+        20
+    log:
+        'output/logs/bro_scaffold_exonerate.log'
+    shell:
+        'bin/exonerate-2.2.0-x86_64/bin/exonerate '
+        '--model protein2genome '
+        '--score 400 '
+        '--showalignment no '
+        '{input.mh_peptides} '
+        '{input.bro_scaffolds} '
+        '> {output.exonerate_res} '
+        '2> {log} '
+
+rule filter_scaffolds_with_bro:
+    input:
+        bro_scaffold_list = 'output/mh_exonerate/genome_bro/bro_scaffold_ids.txt',
+        mh_genome = 'data/Mh_assembly.fa'
+    output:
+        bro_scaffolds = 'output/mh_exonerate/genome_bro_scaffolds/bro_scaffolds.fasta'
+    threads:
+        50
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/filter_bro_scaffolds.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.mh_genome} '
+        'include=t '
+        'names={input.bro_scaffold_list} '
+        'substring=name '
+        'out={output.bro_scaffolds} '
+        '&> {log}'
+
 rule grep_scaffolds:
     input:
-        exonerate_res = 'output/mh_exonerate/mh_exonerate.out'
+        exonerate_res = 'output/mh_exonerate/genome_bro/mh_genome_bro_exonerate.out'
     output:
-        bro_scaffolds = 'output/mh_exonerate/exonerate_bro_scaffolds.txt'
+        bro_scaffolds = 'output/mh_exonerate/genome_bro/exonerate_bro_scaffolds.txt'
     threads:
         20
     shell:
         'egrep -i "Target: " {input.exonerate_res} > {output.bro_scaffolds} '
 
+rule mh_genome_bro_grep_res:
+    input:
+        genome_bro_exonerate = 'output/mh_exonerate/genome_bro/mh_genome_bro_exonerate.out'
+    output:
+        vulgar_bro_exonerate = 'output/mh_exonerate/genome_bro/mh_genome_bro_exonerate_vulgar.out'
+    shell:
+        'egrep -i "vulgar:" {input.genome_bro_exonerate} > {output.vulgar_bro_exonerate}'
+
+##where do bro peptides identified with reciprical blast map to in M.hyp genome?
 rule mh_genome_bro_exonerate:
     input:
-        bro_peptides = 'output/mh_exonerate/bro_peptides.faa',
+        bro_peptides = 'output/mh_exonerate/genome_bro/bro_peptides.faa',
         mh_genome = 'data/Mh_assembly.fa'
     output:
-        exonerate_res = 'output/mh_exonerate/mh_exonerate.out'
+        exonerate_res = 'output/mh_exonerate/genome_bro/mh_genome_bro_exonerate.out'
     threads:
-        50
+        20
     log:
         'output/logs/mh_exonerate.log'
     shell:
@@ -155,7 +275,7 @@ rule filter_bro_peptides:
         peptide_db = 'data/peptide_dbs/Mhyp.faa',
         peptide_hit_ids = 'output/viral_nr_blastp_r/Mh/mh_bro_peptide_ids.txt'
     output:
-        bro_peptides = 'output/mh_exonerate/bro_peptides.faa'
+        bro_peptides = 'output/mh_exonerate/genome_bro/bro_peptides.faa'
     threads:
         50
     singularity:
