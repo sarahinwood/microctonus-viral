@@ -67,13 +67,14 @@ rule target:
         ###viral peptide exonerate
        	'output/mh_exonerate/genome_viral_scaffolds/viral_scaffold_peptides_blastp.outfmt3',
        	##interproscan for all peptides on viral scaffolds
-       	'output/mh_exonerate/genome_viral_scaffolds/interproscan/all_viral_scaffold_peptides.fasta.tsv'
-
+       	'output/mh_exonerate/genome_viral_scaffolds/interproscan/all_viral_scaffold_peptides.fasta.tsv',
+        ##for trial of exonerate with gff3
+        'output/mh_exonerate/genome_viral/exonerate_gff_trial/exonerate.output.gff'
 
 ##for exonerate
 ##could use this to decrease output size while keeping vulgar output --showalignment no
-##--bestn report best n matches for each query - kind of handy to be abke to search for bro scaffold no.s in full res currently
-
+##--bestn report best n matches for each query - kind of handy to be able to search for bro scaffold no.s in full res currently
+##--showtargetgff Report GFF output for features on the target sequence.
 
 rule mh_trans_baculoviridae_grep_res:
     input:
@@ -142,7 +143,6 @@ rule mh_transcriptome_broN_exonerate:
         '{input.mh_genome} '
         '> {output.exonerate_res} '
         '2> {log} '
-
 
 ###########################
 ##interproscan for all peptides on viral scaffolds
@@ -311,6 +311,41 @@ rule viral_peptide_exonerate_grep_res:
         vulgar_viral_exonerate = 'output/mh_exonerate/genome_viral/viral_peptide_exonerate_vulgar.out'
     shell:
         'egrep -i "vulgar:" {input.viral_exonerate} > {output.vulgar_viral_exonerate}'
+
+##reformat exonerate gff output
+rule process_exonerate_gff3:
+    input:
+        exonerate_gff_output = 'output/mh_exonerate/genome_viral/exonerate_gff_trial/viral_peptide_exonerate.out'
+    output:
+        gff3 = 'output/mh_exonerate/genome_viral/exonerate_gff_trial/exonerate.output.gff'
+    threads:
+        20
+    shell:
+        'src/process_exonerate_gff3.pl {input.exonerate_gff_output} > {output.gff3}'
+
+##same but with gff to see what that output looks like
+rule viral_peptide_exonerate_gff:
+    input:
+        viral_peptides = 'output/mh_exonerate/genome_viral/viral_peptides.faa',
+        mh_genome = 'data/Mh_assembly.fa'
+    output:
+        exonerate_res = 'output/mh_exonerate/genome_viral/exonerate_gff_trial/viral_peptide_exonerate.out'
+    threads:
+        20
+    log:
+        'output/logs/viral_peptide_exonerate_gff3.log'
+    shell:
+        'bin/exonerate-2.2.0-x86_64/bin/exonerate '
+        '--model protein2genome '
+        '--score 400 '
+        '{input.viral_peptides} '
+        '{input.mh_genome} '
+        '> {output.exonerate_res} '
+        '--showtargetgff yes '
+        '--showalignment no '
+        '--ryo ">%qi length=%ql alnlen=%qal\n>%ti length=%tl alnlen=%tal\n" '
+        '--bestn 1 '
+        '2> {log} ' 
 
 #find which scaffolds all of the viral peptides map to - LOOK HERE AND SEE IF GENES APPEAR TO HAVE INTRONS!!!!
 rule viral_peptide_exonerate:
