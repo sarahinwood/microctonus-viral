@@ -29,7 +29,7 @@ viral_exonerate_table <- snakemake@input[["viral_exonerate_table"]]
 ##exonerate to see what peptides map to viral scaffolds
 ##to then blast peptides and see what other genes are around viral genes in these scaffolds
 viral_scaffold_peptides_exonerate <- fread(exonerate_viral_scaffolds_res, header=FALSE, sep="")
-viral_scaffold_peptides_exonerate <- viral_scaffold_peptides_exonerate[-c(1,2,67),]
+viral_scaffold_peptides_exonerate <- viral_scaffold_peptides_exonerate[-c(1,2,123),]
 vspe1 <- viral_scaffold_peptides_exonerate[,tstrsplit(V1, "M ", fixed=TRUE, keep=1)]
 vspe2 <- vspe1[,tstrsplit(V1, "vulgar:", fixed=TRUE, keep=2)]
 vspe3 <- vspe2[,tstrsplit(V1, " ", fixed=TRUE, keep=c(1,2,3,4,5,6,7,8,9,10))]

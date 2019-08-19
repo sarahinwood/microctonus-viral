@@ -11,6 +11,8 @@ import os
 def resolve_path(x):
     return(str(pathlib2.Path(x).resolve(strict=False)))
 
+####for peptide db files####
+
 def find_db_files(peptide_dir):
 #Make list of files
     path_generator = os.walk(peptide_dir, followlinks = True)
@@ -25,32 +27,29 @@ def find_db_files(peptide_dir):
                 my_peptide_files = str(pathlib2.Path(dirpath))
     return(my_peptide_files)
 
-def sample_name_to_fastq(wildcards):
-    sample_row = sample_key[sample_key['Name'] == wildcards.sample]
-    sample_all_faa = [x for x in all_faa[sample_row]]
-
 ###########
 # GLOBALS #
 ###########
 
-sample_key_file = 'data/sample_key.csv'
-sample_key = pandas.read_csv(sample_key_file)
-
+####for peptide dbs####
+peptide_sample_key_file = 'data/peptide_sample_key.csv'
+peptide_sample_key = pandas.read_csv(peptide_sample_key_file)
 peptide_dir = 'data/peptide_dbs'
+all_dbs = sorted(set(peptide_sample_key['Name']))
 
-all_dbs = sorted(set(sample_key['Name']))
+##############
+# CONTAINERS #
+##############
 
-#containers
 tidyverse_container = 'shub://TomHarrop/singularity-containers:r_3.5.0'
-bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 
 #########
 # SETUP #
 #########
 
+####for peptide db files####
 all_faa = find_db_files(peptide_dir)
-
-all_samples = sorted(set(sample_key['Name']))
+all_faa_files = sorted(set(peptide_sample_key['Name']))
 
 #########
 # RULES #
@@ -59,7 +58,7 @@ all_samples = sorted(set(sample_key['Name']))
 rule target:
     input:
         ##blast results
-        expand('output/nr_blastp/{sample}_blastp.outfmt3', sample=all_samples),
+        expand('output/nr_blastp/{sample}_blastp.outfmt3', sample=all_faa_files),
         ##exonerate to map transcriptome bro genes onto M.hyp genome
         'output/mh_exonerate/transcriptome_bro/mh_trinity_broN_exonerate.out',
         ##exonerate to map transcriptome baculoviridae genes onto M.hyp genome
@@ -69,12 +68,9 @@ rule target:
        	##interproscan for all peptides on viral scaffolds
        	'output/mh_exonerate/genome_viral_scaffolds/interproscan/all_viral_scaffold_peptides.fasta.tsv',
         ##for trial of exonerate with gff3
-        'output/mh_exonerate/genome_viral/exonerate_gff_trial/exonerate.output.gff'
-
-##for exonerate
-##could use this to decrease output size while keeping vulgar output --showalignment no
-##--bestn report best n matches for each query - kind of handy to be able to search for bro scaffold no.s in full res currently
-##--showtargetgff Report GFF output for features on the target sequence.
+        'output/mh_exonerate/genome_viral/exonerate_gff_trial/exonerate.output.gff',
+        ##blastx of full viral scaffolds
+        'output/mh_exonerate/genome_viral_scaffolds/blastx/blastx_viral_scaffolds.outfmt3'
 
 rule mh_trans_baculoviridae_grep_res:
     input:
@@ -144,7 +140,6 @@ rule mh_transcriptome_broN_exonerate:
         '> {output.exonerate_res} '
         '2> {log} '
 
-###########################
 ##interproscan for all peptides on viral scaffolds
 rule interproscan_viral_scaffold_peptides:
 	input:
@@ -267,6 +262,27 @@ rule exonerate_viral_scaffolds:
         '{input.viral_scaffolds} '
         '> {output.exonerate_res} '
         '2> {log} '
+
+#blastx viral scaffolds to see what hits they get and if peptides predicted by blastx differ in location from the peptide dbs
+rule blastx_viral_scaffolds:
+    input:
+        viral_scaffolds = 'output/mh_exonerate/genome_viral_scaffolds/viral_scaffolds.fasta'
+    output:
+        blastp_res = 'output/mh_exonerate/genome_viral_scaffolds/blastx/blastx_viral_scaffolds.outfmt3'
+    params:
+        blast_db = 'bin/db/blastdb/nr/nr'
+    threads:
+        50
+    log:
+        'output/logs/blastx_viral_scaffolds.log'
+    shell:
+        'blastx '
+        '-query {input.viral_scaffolds} '
+        '-db {params.blast_db} '
+        '-num_threads {threads} '
+        '-evalue 1e-05 '
+        '-outfmt "6 std salltitles" > {output.blastp_res} '
+        '2> {log}'
 
 #pull out genome scaffolds that viral genes map onto
 rule filter_viral_scaffolds:
