@@ -13,37 +13,38 @@ sink(log, append = TRUE, type = "output")
 #############
 
 library(data.table)
-library(dplyr)
 
 ###########
 # GLOBALS #
 ###########
 
-exonerate_viral_scaffolds_res <- snakemake@input[["exonerate_viral_scaffolds_res"]]
-viral_exonerate_table <- snakemake@input[["viral_exonerate_table"]]
+viral_peptide_list <- snakemake@input[["viral_peptide_list"]]
+gff_file <- snakemake@input[["gff"]]
 
 ########
 # MAIN #
 ########
 
-##exonerate to see what peptides map to viral scaffolds
-##to then blast peptides and see what other genes are around viral genes in these scaffolds
-viral_scaffold_peptides_exonerate <- fread(exonerate_viral_scaffolds_res, header=FALSE, sep="")
-viral_scaffold_peptides_exonerate <- viral_scaffold_peptides_exonerate[-c(1,2,123),]
-vspe1 <- viral_scaffold_peptides_exonerate[,tstrsplit(V1, "M ", fixed=TRUE, keep=1)]
-vspe2 <- vspe1[,tstrsplit(V1, "vulgar:", fixed=TRUE, keep=2)]
-vspe3 <- vspe2[,tstrsplit(V1, " ", fixed=TRUE, keep=c(1,2,3,4,5,6,7,8,9,10))]
-vspe_final <- select(vspe3, -V1, -V5, -V9)
-setnames(vspe_final, old=c("V2", "V3", "V4", "V6", "V7", "V8", "V10"), new=c("peptide_id (query)", "query_start", "query_end", "target", "target_start", "target_end", "raw_score"))
-fwrite(vspe_final, snakemake@output[["vspe_final_table"]])
+viral_peptides <- fread(viral_peptide_list, header=FALSE)
+gff <- fread(gff_file)
+##set column names
+setnames(gff, old=c("##gff-version 3", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9"), new=c("scaffold_id", "source", "type", "start", "end", "score", "strand", "phase", "attributes"))
 
-##both viral and other peptides on viral-containing scaffolds
-list_peptides_on_viral_scaffolds <- data.table(unique(vspe_final$`peptide_id (query)`))
-fwrite(list(list_peptides_on_viral_scaffolds$V1), snakemake @output[["all_peptides_list"]])
-viral_exonerate_table <- fread(viral_exonerate_table)
-list_viral_peptides <- data.table(unique(viral_exonerate_table$`peptide_id (query)`))
+##filter down to mRNA rows only
+gff_mrna <- subset(gff, gff$type=="mRNA")
+##split attributes column
+gff_mrna$peptide_id <- tstrsplit(gff_mrna$attributes, "=", keep=c(2))
+gff_mrna$peptide_id <- tstrsplit(gff_mrna$peptide_id, ";", keep=c(1))
 
-##filter out peptides on viral scaffolds that are NOT viral peptides
-peptides_not_viral <- list_peptides_on_viral_scaffolds$V1[!(list_peptides_on_viral_scaffolds$V1 %in% list_viral_peptides$V1)]
-fwrite(list(peptides_not_viral), snakemake@output[["non_viral_peptide_list"]])
+##gff table with viral peptide IDs
+viral_peptide_gff <- subset(gff_mrna, peptide_id %in% viral_peptides$V1)
+##list scaffolds with viral peptides
+viral_scaffolds <- data.table(unique(viral_peptide_gff$scaffold_id))
+
+##subset mRNA gff to get all peptides on scaffolds with viral peptides
+viral_scaffold_peptides <- subset(gff_mrna, scaffold_id %in% viral_scaffolds$V1)
+fwrite(list(viral_scaffold_peptides$peptide_id), snakemake@output[["peptides_viral_scaffolds"]])
+
+
+
 
