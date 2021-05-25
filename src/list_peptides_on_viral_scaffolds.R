@@ -45,6 +45,3 @@ viral_scaffolds <- data.table(unique(viral_peptide_gff$scaffold_id))
 viral_scaffold_peptides <- subset(gff_mrna, scaffold_id %in% viral_scaffolds$V1)
 fwrite(list(viral_scaffold_peptides$peptide_id), snakemake@output[["peptides_viral_scaffolds"]])
 
-
-
-
