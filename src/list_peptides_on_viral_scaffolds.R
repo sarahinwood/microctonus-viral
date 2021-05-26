@@ -13,6 +13,7 @@ sink(log, append = TRUE, type = "output")
 #############
 
 library(data.table)
+library(dplyr)
 
 ###########
 # GLOBALS #
@@ -26,6 +27,7 @@ gff_file <- snakemake@input[["gff"]]
 ########
 
 viral_peptides <- fread(viral_peptide_list, header=FALSE)
+##note that scaffold names are changed from final assembly file but are same scaffolds
 gff <- fread(gff_file)
 ##set column names
 setnames(gff, old=c("##gff-version 3", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9"), new=c("scaffold_id", "source", "type", "start", "end", "score", "strand", "phase", "attributes"))
@@ -43,5 +45,9 @@ viral_scaffolds <- data.table(unique(viral_peptide_gff$scaffold_id))
 
 ##subset mRNA gff to get all peptides on scaffolds with viral peptides
 viral_scaffold_peptides <- subset(gff_mrna, scaffold_id %in% viral_scaffolds$V1)
+##count how many peptides from each scaffold
+scaffold_counts <- viral_scaffold_peptides %>% count(scaffold_id)
+fwrite(scaffold_counts, snakemake@output[["scaffold_counts"]])
+##write list of peptides
 fwrite(list(viral_scaffold_peptides$peptide_id), snakemake@output[["peptides_viral_scaffolds"]])
 

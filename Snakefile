@@ -18,7 +18,10 @@ def get_peptide_dbs(wildcards):
 ##this parses the config & sample key files into an object named pep
 pepfile: 'data/config.yaml'
 ##can now use this to generate list of all samples
-all_samples = pep.sample_table['sample_name']
+all_species = pep.sample_table['sample_name']
+
+##note if using genome files - use {species}.scaffolds.fa files (not {species}.assembly.fa)
+##they have PGA scaffodls renamed to match GFF3
 
 ##############
 # CONTAINERS #
@@ -34,22 +37,13 @@ bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 
 rule target:
     input:
+        expand('output/nr_blastp/{species}_blastp.outfmt6', species='Mh')
         ##recip blast -> all peptides on viral scaffolds blast results
-        expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_scaffolds.outfmt6', species=all_samples),
+        #expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_scaffolds.outfmt6', species=all_species),
         ##interproscan results
-        expand('output/nr_analysis_{species}/{species}_interproscan.tsv', species=all_samples)
-        ##exonerate to map transcriptome bro genes onto M.hyp genome
-        #'output/mh_exonerate/transcriptome_bro/mh_trinity_broN_exonerate.out',
-        ##exonerate to map transcriptome baculoviridae genes onto M.hyp genome
-        #'output/mh_exonerate/transcriptome_baculoviridae/vul_baculo_exonerate.out',
-        ###viral peptide exonerate
-        #'output/mh_exonerate/genome_viral_scaffolds/viral_scaffold_peptides_blastp.outfmt6',
-        ##interproscan for all peptides on viral scaffolds
-        #'output/mh_exonerate/genome_viral_scaffolds/interproscan/all_viral_scaffold_peptides.fasta.tsv',
-        ##for trial of exonerate with gff3 - errors in output - must fix manually!
-        #'output/mh_exonerate/genome_viral/exonerate_gff_trial/exonerate.output.gff',
-        ##blastx of full viral scaffolds
-        #'output/mh_exonerate/genome_viral_scaffolds/blastx/blastx_viral_scaffolds.outfmt6'
+        #expand('output/nr_analysis_{species}/{species}_interproscan.tsv', species=all_species),
+        ##GC content
+        #expand('output/bb_stats/{species}_gc.txt', species=all_species)
 
 rule mh_trans_baculoviridae_grep_res:
     input:
@@ -81,6 +75,29 @@ rule mh_transcriptome_baculoviridae_exonerate:
 
 ##should also look at genes and whether they have introns - genes predicted with eukaryotic translation code so need to re-predict with bacterial
 
+###########################
+## GC content of contigs ##
+###########################
+
+rule bb_stats:
+    input:
+        genome = 'data/final_microctonus_assemblies_annotations/{species}.assembly.fa'
+    output:
+        gc = 'output/bb_stats/{species}_gc.txt',
+        stats = 'output/bb_stats/{species}_bb_stats.out',
+        gc_hist = 'output/bb_stats/{species}_gc_hist.out'
+    log:
+        'output/logs/{species}/bbstats.log'
+    singularity:
+        bbduk_container
+    shell:
+        'stats.sh '
+        'in={input.genome} '
+        'out={output.stats} '
+        'gc={output.gc} '
+        'gcformat=4 '
+        'gchist={output.gc_hist} '
+
 #############################################
 ## what else on scaffolds with viral hits? ##
 #############################################
@@ -103,6 +120,7 @@ rule interproscan_peptides_viral_scaffolds:
         '--cpu {threads} '
         '2> {log}'
 
+##outputs warning that 5+ hits should be investigated with blastp
 rule blastp_peptides_viral_scaffolds:
     input:
         peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.faa'
@@ -145,12 +163,14 @@ rule filter_peptides_viral_scaffolds:
         'out={output.peptides_viral_scaffolds} '
         '&> {log}'  
 
+##should probably remove scaffolds that are main-genome from hic from blasting every gene on them
 rule link_viral_peptides_to_scaffolds:
     input:
         viral_peptide_list = 'output/nr_analysis_{species}/{species}_viral_peptides.txt',
         gff = 'data/final_microctonus_assemblies_annotations/{species}.gff3'
     output:
-        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.txt'
+        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.txt',
+        scaffold_counts = 'output/nr_analysis_{species}/{species}_viral_scaffold_counts.csv'
     singularity:
         tidyverse_container
     log:
@@ -193,6 +213,7 @@ rule blastp_nr:
         '-db {params.blast_db} '
         '-num_threads {threads} '
         '-evalue 1e-05 '
+        '-max_target_seqs 1 '
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
 
@@ -230,11 +251,11 @@ rule filter_pot_viral_peptide_ids:
     script:
         'src/peptide_hit_id_lists.R'
 
-##should test with '-max_target_seqs 1 ' and compare res
+##waiting on db update - can't use taxidlist with current version
 rule blastp_viral:
     input:
         query = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',
-        gi_list = 'data/gi_lists/virus.gi.txt'
+        taxid_list = 'output/taxids/species_virus_taxids.txt'
     output:
         blastp_res = 'output/viral_blastp/{species}_blastp.outfmt6'
     params:
@@ -247,8 +268,34 @@ rule blastp_viral:
         'blastp '
         '-query {input.query} '
         '-db {params.blast_db} '
-        '-gilist {input.gi_list} '
+        '-taxidlist {input.taxid_list} '
         '-num_threads {threads} '
         '-evalue 1e-05 '
+        '-max_target_seqs 1 '
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
+
+##filter to below genus level as blast only uses species level or below
+rule filter_virus_taxids:
+    input:
+        'output/taxids/virus_taxids.txt'
+    output:
+        'output/taxids/species_virus_taxids.txt'
+    shell:
+        'cat {input} | '
+        "bin/taxonkit-0.8.0 filter "
+        "-L genus "
+        '> {output}'
+
+##generate list of viral taxids
+rule list_virus_taxids:
+    output:
+        virus_taxid_list = 'output/taxids/virus_taxids.txt'
+    shell:
+        'bin/taxonkit-0.8.0 list '
+        '--ids 10239 '
+        '--indent "" '
+        '> {output}'
+
+##to download nr db
+##nohup update_blastdb.pl --num_threads 50 --decompress nr &> nohup.out &
