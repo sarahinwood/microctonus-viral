@@ -11,6 +11,10 @@ def get_peptide_dbs(wildcards):
     my_pep = pep.get_sample(wildcards.sample).to_dict()
     return {k: my_pep[k] for k in input_keys}
 
+##needed to get BUSCO running in new folder
+def resolve_path(x):
+    return(str(pathlib2.Path(x).resolve(strict=False)))
+
 ###########
 # GLOBALS #
 ###########
@@ -28,6 +32,7 @@ all_species = pep.sample_table['sample_name']
 ##############
 
 tom_tidyverse_container = 'shub://TomHarrop/singularity-containers:r_3.5.0'
+busco_container = 'docker://ezlabgva/busco:v4.0.2_cv1'
 tidyverse_container = 'docker://rocker/tidyverse'
 bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 
@@ -37,13 +42,15 @@ bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 
 rule target:
     input:
-        expand('output/nr_blastp/{species}_blastp.outfmt6', species='Mh')
         ##recip blast -> all peptides on viral scaffolds blast results
-        #expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_scaffolds.outfmt6', species=all_species),
+        expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_scaffolds.outfmt6', species=all_species),
         ##interproscan results
-        #expand('output/nr_analysis_{species}/{species}_interproscan.tsv', species=all_species),
-        ##GC content
-        #expand('output/bb_stats/{species}_gc.txt', species=all_species)
+        expand('output/nr_analysis_{species}/{species}_interproscan.tsv', species=all_species),
+        ##busco on non-hic genomes
+        expand('output/busco/{not_hic_species}/short_summary.specific.endopterygota_odb10.{not_hic_species}.txt', filter=['MO', 'IR']),
+        ##GC content plots
+        expand('output/bbstats/{hic_species}/all_gc_boxplot.pdf', hic_species=['Mh', 'FR']),
+        expand('output/bbstats/{not_hic_species}/all_gc_boxplot.pdf', not_hic_species=['MO', 'IR'])
 
 rule mh_trans_baculoviridae_grep_res:
     input:
@@ -79,15 +86,74 @@ rule mh_transcriptome_baculoviridae_exonerate:
 ## GC content of contigs ##
 ###########################
 
+rule plot_GC_content_not_hic:
+    input:
+        gc = 'output/bb_stats/{not_hic_species}/gc.txt',
+        gc_hist = 'output/bb_stats/{not_hic_species}/gc_hist.out',
+        viral_contig_list = 'output/nr_analysis_{not_hic_species}/{not_hic_species}_viral_scaffold_counts.csv',
+        busco = 'output/busco/{not_hic_species}/full_table_{not_hic_species}.tsv'
+    output:
+        hic_only = 'output/bbstats/{not_hic_species}/hic_gc_boxplot.pdf',
+        all_contigs = 'output/bbstats/{not_hic_species}/all_gc_boxplot.pdf',
+        gc_histogram = 'output/bbstats/{not_hic_species}/gc_histogram.pdf'
+    log:
+        'output/logs/bbstats/{not_hic_species}_plot_gc.log'
+    script:
+        'src/plot_GC_content_not_hic.R'
+
+rule plot_GC_content_hic:
+    input:
+        gc = 'output/bb_stats/{hic_species}/gc.txt',
+        gc_hist = 'output/bb_stats/{hic_species}/gc_hist.out',
+        viral_contig_list = 'output/nr_analysis_{hic_species}/{hic_species}_viral_scaffold_counts.csv',
+        hic_scaffold_list = 'data/hi-c_genomes/{species}_hic_scaffold_ids.txt'
+    output:
+        hic_only = 'output/bbstats/{hic_species}/hic_gc_boxplot.pdf',
+        all_contigs = 'output/bbstats/{hic_species}/all_gc_boxplot.pdf',
+        gc_histogram = 'output/bbstats/{hic_species}/gc_histogram.pdf'
+    log:
+        'output/logs/bbstats/{hic_species}_plot_gc.log'
+    script:
+        'src/plot_GC_content_hic.R'
+
+##for two assemblies without hi-c need busco to compare busco containing to viral
+rule busco_non_hic_genomes:
+    input:
+        genome = 'data/final_genomes/{not_hic_species}.fa'
+    output:
+        'output/busco/{not_hic_species}/full_table_{not_hic_species}.tsv'
+    log:
+        str(pathlib2.Path(resolve_path('output/logs/'),
+                            'busco_{not_hic_species}.log'))
+    params:
+        wd = 'output/busco',
+        genome = lambda wildcards, input: resolve_path(input.genome)
+    singularity:
+        busco_container
+    threads:
+        20
+    shell:
+        'cd {params.wd} || exit 1 ; '
+        'busco '
+        '--force '
+        '--in {params.genome} '
+        '--out {wildcards.not_hic_species} '
+        '--lineage endopterygota_odb10 '
+        '--cpu {threads} '
+        '--augustus_species tribolium '
+        '--mode transcriptome '
+        '-f '
+        '&> {log} '
+
 rule bb_stats:
     input:
-        genome = 'data/final_microctonus_assemblies_annotations/{species}.assembly.fa'
+        genome = 'data/final_genomes/{species}.fa'
     output:
-        gc = 'output/bb_stats/{species}_gc.txt',
-        stats = 'output/bb_stats/{species}_bb_stats.out',
-        gc_hist = 'output/bb_stats/{species}_gc_hist.out'
+        gc = 'output/bb_stats/{species}/gc.txt',
+        stats = 'output/bb_stats/{species}/bb_stats.out',
+        gc_hist = 'output/bb_stats/{species}/gc_hist.out'
     log:
-        'output/logs/{species}/bbstats.log'
+        'output/logs/bbstats/{species}.log'
     singularity:
         bbduk_container
     shell:
@@ -120,7 +186,6 @@ rule interproscan_peptides_viral_scaffolds:
         '--cpu {threads} '
         '2> {log}'
 
-##outputs warning that 5+ hits should be investigated with blastp
 rule blastp_peptides_viral_scaffolds:
     input:
         peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.faa'
@@ -163,11 +228,12 @@ rule filter_peptides_viral_scaffolds:
         'out={output.peptides_viral_scaffolds} '
         '&> {log}'  
 
-##should probably remove scaffolds that are main-genome from hic from blasting every gene on them
-rule link_viral_peptides_to_scaffolds:
+##removes scaffolds that are main-genome from hic to avoid blasting every gene on them
+rule list_peptides_on_viral_scaffolds:
     input:
         viral_peptide_list = 'output/nr_analysis_{species}/{species}_viral_peptides.txt',
-        gff = 'data/final_microctonus_assemblies_annotations/{species}.gff3'
+        gff = 'data/final_microctonus_assemblies_annotations/{species}.gff3',
+        hic_scaffold_list = 'data/hi-c_genomes/{species}_hic_scaffold_ids.txt'
     output:
         peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.txt',
         scaffold_counts = 'output/nr_analysis_{species}/{species}_viral_scaffold_counts.csv'
@@ -182,9 +248,10 @@ rule link_viral_peptides_to_scaffolds:
 ## reciprocal viral blastp ##
 #############################
 
-rule blastp_nr_viral_res:
+rule nr_blastp_viral_analysis:
     input:
-        nr_blastp_res = 'output/nr_blastp/{species}_blastp.outfmt6'
+        nr_blastp_res = 'output/nr_blastp/{species}_blastp.outfmt6',
+        taxid_list = 'output/taxids/species_virus_taxids.txt'
     output:
         blastp_viral_res = 'output/nr_analysis_{species}/{species}_nr_blast_viral.csv',
         viral_peptide_list = 'output/nr_analysis_{species}/{species}_viral_peptides.txt'
@@ -195,7 +262,6 @@ rule blastp_nr_viral_res:
     script:
         'src/nr_blastp_viral_analysis.R'
 
-##should test with '-max_target_seqs 1 ' and compare res
 rule blastp_nr:
     input:
         pot_viral_peptides = 'output/viral_blastp/{species}_potential_viral_peptides.faa'
@@ -239,6 +305,7 @@ rule filter_pot_viral_peptides:
         'out={output.pot_viral_peptides} '
         '&> {log}'
 
+##rename script to match rule
 rule filter_pot_viral_peptide_ids:
     input:
         blastp_res = 'output/viral_blastp/{species}_blastp.outfmt6'
@@ -251,7 +318,6 @@ rule filter_pot_viral_peptide_ids:
     script:
         'src/peptide_hit_id_lists.R'
 
-##waiting on db update - can't use taxidlist with current version
 rule blastp_viral:
     input:
         query = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',
