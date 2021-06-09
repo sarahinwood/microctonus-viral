@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import peppy
+import pathlib2
 
 #############
 # FUNCTIONS #
@@ -10,10 +11,6 @@ def get_peptide_dbs(wildcards):
     input_keys = ['peptide_db']
     my_pep = pep.get_sample(wildcards.sample).to_dict()
     return {k: my_pep[k] for k in input_keys}
-
-##needed to get BUSCO running in new folder
-def resolve_path(x):
-    return(str(pathlib2.Path(x).resolve(strict=False)))
 
 ###########
 # GLOBALS #
@@ -32,7 +29,6 @@ all_species = pep.sample_table['sample_name']
 ##############
 
 tom_tidyverse_container = 'shub://TomHarrop/singularity-containers:r_3.5.0'
-busco_container = 'docker://ezlabgva/busco:v4.0.2_cv1'
 tidyverse_container = 'docker://rocker/tidyverse'
 bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 
@@ -43,163 +39,48 @@ bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 rule target:
     input:
         ##recip blast -> all peptides on viral scaffolds blast results
-        expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_scaffolds.outfmt6', species=all_species),
-        ##interproscan results
-        expand('output/nr_analysis_{species}/{species}_interproscan.tsv', species=all_species),
-        ##busco on non-hic genomes
-        expand('output/busco/{not_hic_species}/short_summary.specific.endopterygota_odb10.{not_hic_species}.txt', filter=['MO', 'IR']),
-        ##GC content plots
-        expand('output/bbstats/{hic_species}/all_gc_boxplot.pdf', hic_species=['Mh', 'FR']),
-        expand('output/bbstats/{not_hic_species}/all_gc_boxplot.pdf', not_hic_species=['MO', 'IR'])
-
-rule mh_trans_baculoviridae_grep_res:
-    input:
-        baculoviridae_exonerate = 'output/mh_exonerate/transcriptome_baculoviridae/mh_baculoviridae_exonerate.out'
-    output:
-        vulgar_baculoviridae_exonerate = 'output/mh_exonerate/transcriptome_baculoviridae/vul_baculo_exonerate.out'
-    shell:
-        'egrep -i "vulgar:" {input.baculoviridae_exonerate} > {output.vulgar_baculoviridae_exonerate}'
-
-#where do other transcriptome baculoviridae genes align to in M.hyp genome?
-rule mh_transcriptome_baculoviridae_exonerate:
-    input:
-        baculoviridae_genes = 'output/mh_exonerate/transcriptome_baculoviridae/baculoviridae_genes.fasta',
-        mh_genome = 'data/Mh_assembly.fa'
-    output:
-        exonerate_res = 'output/mh_exonerate/transcriptome_baculoviridae/mh_baculoviridae_exonerate.out'
-    threads:
-        20
-    log:
-        'output/logs/mh_transcriptome_baculoviridae_exonerate.log'
-    shell:
-        'bin/exonerate-2.2.0-x86_64/bin/exonerate '
-        '--model est2genome '
-        '--score 400 '
-        '{input.baculoviridae_genes} '
-        '{input.mh_genome} '
-        '> {output.exonerate_res} '
-        '2> {log} '
+        expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_contigs.outfmt6', species=all_species),
+        expand('output/final_blast_tables/csv/{species}.csv', species=['Mh', 'MO', 'FR']),
+        ##interproscan results - IR results all on Hi-C contigs so not running
+        expand('output/interpro/{species}_interproscan.tsv', species=['Mh', 'MO', 'FR']),
+        ##prodigal predictions - IR only Hi-C scaffolds so not predicting
+        expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR'])
 
 ##should also look at genes and whether they have introns - genes predicted with eukaryotic translation code so need to re-predict with bacterial
 
-###########################
-## GC content of contigs ##
-###########################
+###################################
+## re-predict viral contig genes ##
+###################################
 
-rule plot_GC_content_not_hic:
+rule prodigal_blastp_analysis:
     input:
-        gc = 'output/bb_stats/{not_hic_species}/gc.txt',
-        gc_hist = 'output/bb_stats/{not_hic_species}/gc_hist.out',
-        viral_contig_list = 'output/nr_analysis_{not_hic_species}/{not_hic_species}_viral_scaffold_counts.csv',
-        busco = 'output/busco/{not_hic_species}/full_table_{not_hic_species}.tsv'
+        prodigal_blastp_res = 'output/prodigal/{species}/prodigal_blastp.outfmt6',
+        prodigal_gff_file = 'output/prodigal/{species}/gene_predictions.gff'
     output:
-        hic_only = 'output/bbstats/{not_hic_species}/hic_gc_boxplot.pdf',
-        all_contigs = 'output/bbstats/{not_hic_species}/all_gc_boxplot.pdf',
-        gc_histogram = 'output/bbstats/{not_hic_species}/gc_histogram.pdf'
-    log:
-        'output/logs/bbstats/{not_hic_species}_plot_gc.log'
-    script:
-        'src/plot_GC_content_not_hic.R'
-
-rule plot_GC_content_hic:
-    input:
-        gc = 'output/bb_stats/{hic_species}/gc.txt',
-        gc_hist = 'output/bb_stats/{hic_species}/gc_hist.out',
-        viral_contig_list = 'output/nr_analysis_{hic_species}/{hic_species}_viral_scaffold_counts.csv',
-        hic_scaffold_list = 'data/hi-c_genomes/{species}_hic_scaffold_ids.txt'
-    output:
-        hic_only = 'output/bbstats/{hic_species}/hic_gc_boxplot.pdf',
-        all_contigs = 'output/bbstats/{hic_species}/all_gc_boxplot.pdf',
-        gc_histogram = 'output/bbstats/{hic_species}/gc_histogram.pdf'
-    log:
-        'output/logs/bbstats/{hic_species}_plot_gc.log'
-    script:
-        'src/plot_GC_content_hic.R'
-
-##for two assemblies without hi-c need busco to compare busco containing to viral
-rule busco_non_hic_genomes:
-    input:
-        genome = 'data/final_genomes/{not_hic_species}.fa'
-    output:
-        'output/busco/{not_hic_species}/full_table_{not_hic_species}.tsv'
-    log:
-        str(pathlib2.Path(resolve_path('output/logs/'),
-                            'busco_{not_hic_species}.log'))
-    params:
-        wd = 'output/busco',
-        genome = lambda wildcards, input: resolve_path(input.genome)
-    singularity:
-        busco_container
-    threads:
-        20
-    shell:
-        'cd {params.wd} || exit 1 ; '
-        'busco '
-        '--force '
-        '--in {params.genome} '
-        '--out {wildcards.not_hic_species} '
-        '--lineage endopterygota_odb10 '
-        '--cpu {threads} '
-        '--augustus_species tribolium '
-        '--mode transcriptome '
-        '-f '
-        '&> {log} '
-
-rule bb_stats:
-    input:
-        genome = 'data/final_genomes/{species}.fa'
-    output:
-        gc = 'output/bb_stats/{species}/gc.txt',
-        stats = 'output/bb_stats/{species}/bb_stats.out',
-        gc_hist = 'output/bb_stats/{species}/gc_hist.out'
-    log:
-        'output/logs/bbstats/{species}.log'
-    singularity:
-        bbduk_container
-    shell:
-        'stats.sh '
-        'in={input.genome} '
-        'out={output.stats} '
-        'gc={output.gc} '
-        'gcformat=4 '
-        'gchist={output.gc_hist} '
-
-#############################################
-## what else on scaffolds with viral hits? ##
-#############################################
-
-rule interproscan_peptides_viral_scaffolds:
-    input:
-        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.faa'
-    output:
-        interpro_tsv = 'output/nr_analysis_{species}/{species}_interproscan.tsv'
+        prodigal_blastp_res_table = 'output/prodigal/{species}/prodigal_blastp_res.csv',
+        blastp_gff = 'output/prodigal/{species}/blastp_gff.csv'
     threads:
         20
     log:
-        'output/logs/{species}/interproscan_peptides_viral_scaffolds.log'
-    shell:
-        'bin/interproscan-5.51-85.0/interproscan.sh '
-        '--input {input.peptides_viral_scaffolds} '
-        '--formats TSV '
-        '--outfile {output.interpro_tsv} '
-        '--goterms '
-        '--cpu {threads} '
-        '2> {log}'
+        'output/logs/{species}/prodigal_blastp_analysis.log'
+    script:
+        'src/prodigal_blastp_analysis.R'
 
-rule blastp_peptides_viral_scaffolds:
+
+rule blast_prodigal_predictions:
     input:
-        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.faa'
+        prodigal = 'output/prodigal/{species}/protein_translations.faa'
     output:
-        blastp_res = 'output/nr_analysis_{species}/{species}_blastp_peptides_viral_scaffolds.outfmt6'
+        blastp_res = 'output/prodigal/{species}/prodigal_blastp.outfmt6'
     params:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         20
     log:
-        'output/logs/{species}/blastp_peptides_viral_scaffolds.log'
+        'output/logs/{species}/prodigal_blastp.log'
     shell:
         'blastp '
-        '-query {input.peptides_viral_scaffolds} '
+        '-query {input.prodigal} '
         '-db {params.blast_db} '
         '-num_threads {threads} '
         '-evalue 1e-05 '
@@ -207,12 +88,113 @@ rule blastp_peptides_viral_scaffolds:
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
 
-rule filter_peptides_viral_scaffolds:
+rule interproscan_peptides_viral_contigs:
+    input:
+        peptides_viral_contigs = 'output/prodigal/{species}/protein_translations.faa'
+    output:
+        interpro_tsv = 'output/interpro/{species}_interproscan.tsv'
+    threads:
+        20
+    log:
+        'output/logs/{species}/interproscan_peptides_viral_contigs.log'
+    shell:
+        'bin/interproscan-5.51-85.0/interproscan.sh '
+        '--input {input.peptides_viral_contigs} '
+        '--formats TSV '
+        '--outfile {output.interpro_tsv} '
+        '--goterms '
+        '--cpu {threads} '
+        '2> {log}'
+
+##re-predict viral genes using bacterial translation code
+rule prodigal:
+    input:
+        viral_contigs = 'output/nr_analysis_{species}/{species}_viral_contigs.fa'
+    output:
+        protein_translations = 'output/prodigal/{species}/protein_translations.faa',
+        nucleotide_seq = 'output/prodigal/{species}/nucleotide_seq.fasta',
+        gene_predictions = 'output/prodigal/{species}/gene_predictions.gff'
+    log:
+        'output/logs/{species}/prodigal.log'
+    threads:
+        1
+    shell:
+        'bin/Prodigal-2.6.1/prodigal '
+        '-i {input.viral_contigs} '
+        '-a {output.protein_translations} '
+        '-d {output.nucleotide_seq} '
+        '-f gff '
+        '-p meta '
+        '-o {output.gene_predictions} '
+        '2> {log} '
+
+rule filter_viral_contigs:
+    input:
+        genome = 'data/final_genomes/{species}.fa',
+        viral_contig_ids = 'output/nr_analysis_{species}/{species}_viral_contig_ids.txt'
+    output:
+        viral_contigs = 'output/nr_analysis_{species}/{species}_viral_contigs.fa'
+    threads:
+        20
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/{species}/filter_viral_contigs.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.genome} '
+        'include=t '
+        'names={input.viral_contig_ids} '
+        'out={output.viral_contigs} '
+        '&> {log}'  
+
+#############################################
+## what else on scaffolds with viral hits? ##
+#############################################
+
+rule blastp_viral_contigs_analysis:
+    input:
+        viral_contig_blast_res = 'output/nr_analysis_{species}/{species}_blastp_peptides_viral_contigs.outfmt6',
+        nr_viral_blast_res = 'output/nr_analysis_{species}/{species}_nr_blast_viral.csv',
+        gff_file = 'data/final_microctonus_assemblies_annotations/{species}.gff3'
+    output:
+        full_blast_table = 'output/final_blast_tables/csv/{species}.csv'
+    log:
+        'output/logs/{species}/viral_contig_blast_analysis.log'
+    threads:
+        20
+    singularity:
+        tidyverse_container
+    script:
+        'src/blastp_viral_contigs_analysis.R'
+
+rule blastp_peptides_viral_contigs:
+    input:
+        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.faa'
+    output:
+        blastp_res = 'output/nr_analysis_{species}/{species}_blastp_peptides_viral_contigs.outfmt6'
+    params:
+        blast_db = 'bin/db/blastdb/nr/nr'
+    threads:
+        20
+    log:
+        'output/logs/{species}/blastp_peptides_viral_contigs.log'
+    shell:
+        'blastp '
+        '-query {input.peptides_viral_contigs} '
+        '-db {params.blast_db} '
+        '-num_threads {threads} '
+        '-evalue 1e-05 '
+        '-max_target_seqs 1 '
+        '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
+        '2> {log}'
+
+rule filter_peptides_viral_contigs:
     input:
         peptide_db = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',
-        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.txt'
+        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.txt'
     output:
-        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.faa'
+        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.faa'
     threads:
         20
     singularity:
@@ -223,26 +205,28 @@ rule filter_peptides_viral_scaffolds:
         'filterbyname.sh '
         'in={input.peptide_db} '
         'include=t '
-        'names={input.peptides_viral_scaffolds} '
+        'names={input.peptides_viral_contigs} '
         'ignorejunk=t '
-        'out={output.peptides_viral_scaffolds} '
+        'out={output.peptides_viral_contigs} '
         '&> {log}'  
 
 ##removes scaffolds that are main-genome from hic to avoid blasting every gene on them
-rule list_peptides_on_viral_scaffolds:
+##and peptides already ID'd in viral BlastP - no need to Blast again
+rule list_peptides_on_viral_contigs:
     input:
         viral_peptide_list = 'output/nr_analysis_{species}/{species}_viral_peptides.txt',
-        gff = 'data/final_microctonus_assemblies_annotations/{species}.gff3',
+        gff_file = 'data/final_microctonus_assemblies_annotations/{species}.gff3',
         hic_scaffold_list = 'data/hi-c_genomes/{species}_hic_scaffold_ids.txt'
     output:
-        peptides_viral_scaffolds = 'output/nr_analysis_{species}/{species}_peptides_viral_scaffolds.txt',
-        scaffold_counts = 'output/nr_analysis_{species}/{species}_viral_scaffold_counts.csv'
+        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.txt',
+        contig_counts = 'output/nr_analysis_{species}/{species}_viral_contig_counts.csv',
+        viral_contig_ids = 'output/nr_analysis_{species}/{species}_viral_contig_ids.txt'
     singularity:
         tidyverse_container
     log:
         'output/logs/{species}/link_viral_peptides_to_scaffolds.log'
     script:
-        'src/list_peptides_on_viral_scaffolds.R'
+        'src/list_peptides_on_viral_contigs.R'
 
 #############################
 ## reciprocal viral blastp ##
