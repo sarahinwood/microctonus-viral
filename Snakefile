@@ -66,7 +66,6 @@ rule prodigal_blastp_analysis:
     script:
         'src/prodigal_blastp_analysis.R'
 
-
 rule blast_prodigal_predictions:
     input:
         prodigal = 'output/prodigal/{species}/protein_translations.faa'
