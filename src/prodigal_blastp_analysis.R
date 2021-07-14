@@ -50,6 +50,16 @@ cat(incomplete_l, "incomplete at left-edge genes")
 incomplete_rl <- sum(prodigal_gff$partial=="11")
 cat(incomplete_rl, "incomplete at both edge genes")
 
+prodigal_complete <- subset(prodigal_gff, partial=="00")
+mean(prodigal_complete$conf)
+mean(prodigal_complete$score)
+
+prodigal_incomplete <- subset(prodigal_gff, !(partial=="00"))
+mean(prodigal_incomplete$conf)
+mean(prodigal_incomplete$score)
+
+
+
 ##conf: A confidence score for this gene, representing the probability that this gene is real, i.e. 78.3% means Prodigal believes that gene is real 78.3% of the time and a false positive 21.7% of the time.
 ##score: The total score for this gene.
 ##cscore: The hexamer coding portion of the score, i.e. how much this gene looks like a true protein.
@@ -75,7 +85,7 @@ min_evalues <- prodigal_blastp[,.SD[which.min(evalue)], by=prodigal_nt_id]
 ## merge blastp res with prodigal ##
 ####################################
 
-gene_coords <- subset(prodigal_gff, select=c(start, end, ID, conf))
+gene_coords <- subset(prodigal_gff, select=c(start, end, ID, conf, partial))
 ##scaffold id to gene id
 scaffold_to_geneid <- data.table(prodigal_gff$seqid, prodigal_gff$ID)
 setnames(scaffold_to_geneid, old=c("V1", "V2"), new=c("scaffold_id", "gene_id"))
@@ -83,8 +93,10 @@ scaffold_to_geneid$gene_no <- tstrsplit(scaffold_to_geneid$gene_id, "_", keep=c(
 scaffold_to_geneid$prodigal_nt_id <- data.table(paste(scaffold_to_geneid$scaffold_id,"_",scaffold_to_geneid$gene_no, sep=""))
 blast_gene_ids<- merge(min_evalues, scaffold_to_geneid, by="prodigal_nt_id", all=TRUE)
 blast_gff <- merge(blast_gene_ids, gene_coords, by.x="gene_id", by.y="ID", all=TRUE)
-blast_gff_table <- blast_gff[,c(16,17,2,18,19,20,4,12,13,14,15)]
+blast_gff_table <- blast_gff[,c(16,17,2,18,19,20,4,5,12,13,14,15,21)]
 blast_gff_table$annotation <- tstrsplit(blast_gff_table$annotation, "<>", keep=c(1))
+sum(!is.na(blast_gff_table$annotation))
+length(unique(blast_gff_table$scaffold_id))
 
 fwrite(blast_gff_table, snakemake@output[['blastp_gff']])
 fwrite(min_evalues, snakemake@output[['prodigal_blastp_res_table']])

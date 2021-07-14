@@ -31,6 +31,10 @@ all_species = pep.sample_table['sample_name']
 tom_tidyverse_container = 'shub://TomHarrop/singularity-containers:r_3.5.0'
 tidyverse_container = 'docker://rocker/tidyverse'
 bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
+orffinder_container = 'docker://unlhcc/orffinder:0.4.3'
+
+##need to run actually using container
+prodigal_container = 'docker://biocontainers/prodigal:v1-2.6.3-4-deb_cv1'
 
 #########
 # RULES #
@@ -39,14 +43,150 @@ bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 rule target:
     input:
         ##recip blast -> all peptides on viral scaffolds blast results
-        expand('output/nr_analysis_{species}/{species}_blastp_peptides_viral_contigs.outfmt6', species=all_species),
+        expand('output/viral_contigs_blastp/{species}/{species}_blastp_peptides_viral_contigs.outfmt6', species=all_species),
         expand('output/final_blast_tables/csv/{species}.csv', species=['Mh', 'MO', 'FR']),
         ##interproscan results - IR results all on Hi-C contigs so not running
-        expand('output/interpro/{species}_interproscan.tsv', species=['Mh', 'MO', 'FR']),
+        expand('output/interpro/{species}_interpro_table.csv', species=['Mh', 'MO', 'FR']),
         ##prodigal predictions - IR only Hi-C scaffolds so not predicting
-        expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR'])
+        expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR']),
+        ##DNA virus contig stats
+        expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR']),
+        expand('output/orffinder/{species}/{species}_orffinder.faa', species=['Mh', 'MO', 'FR']),
+        expand('output/orffinder/{species}/{species}_orffinder_coords.out', species=['Mh', 'MO', 'FR']),
+        expand('output/getorf/{species}/{species}_getorf_coords.out', species=['Mh']),
+        expand('output/getorf/{species}/getorf_blastp.outfmt6', species=['Mh']),
+        expand('output/orffinder/{species}/orffinder_blastp.outfmt6', species=['Mh'])
 
-##should also look at genes and whether they have introns - genes predicted with eukaryotic translation code so need to re-predict with bacterial
+############
+## getorf ##
+############
+
+rule blast_getorf_predictions:
+    input:
+        'output/getorf/{species}/{species}_getorf.fasta'
+    output:
+        blastp_res = 'output/getorf/{species}/getorf_blastp.outfmt6'
+    params:
+        blast_db = 'bin/db/blastdb/nr/nr'
+    threads:
+        20
+    log:
+        'output/logs/{species}/getorf_blastp.log'
+    shell:
+        'blastp '
+        '-query {input} '
+        '-db {params.blast_db} '
+        '-num_threads {threads} '
+        '-evalue 1e-05 '
+        '-max_target_seqs 1 '
+        '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
+        '2> {log}'
+
+rule grep_getorf_gene_preds:
+    input:
+        'output/getorf/{species}/{species}_getorf.fasta'
+    output:
+        'output/getorf/{species}/{species}_getorf_coords.out'
+    shell:
+        'grep scaffold {input} > {output}'
+
+rule getorf:
+    input:
+        'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.faa'
+    output:
+        'output/getorf/{species}/{species}_getorf.fasta'
+    log:
+        'output/logs/getorf_{species}.log'
+    shell:
+        'getorf '
+        '-sequence {input} '
+        '-outseq {output} '
+        '-table 11 '
+        '-minsize 300 '
+        '-methionine Yes '
+        '2> {log}'     
+
+###############
+## ORFfinder ##
+###############
+
+rule blast_orffinder_predictions:
+    input:
+        'output/orffinder/{species}/{species}_orffinder.faa'
+    output:
+        blastp_res = 'output/orffinder/{species}/orffinder_blastp.outfmt6'
+    params:
+        blast_db = 'bin/db/blastdb/nr/nr'
+    threads:
+        20
+    log:
+        'output/logs/{species}/orffinder_blastp.log'
+    shell:
+        'blastp '
+        '-query {input} '
+        '-db {params.blast_db} '
+        '-num_threads {threads} '
+        '-evalue 1e-05 '
+        '-max_target_seqs 1 '
+        '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
+        '2> {log}'
+
+rule grep_orffinder_gene_preds:
+    input:
+        'output/orffinder/{species}/{species}_orffinder.faa'
+    output:
+        'output/orffinder/{species}/{species}_orffinder_coords.out'
+    shell:
+        'grep lcl {input} > {output}'
+
+rule orffinder_fa:
+    input:
+        'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.faa'
+    output:
+        'output/orffinder/{species}/{species}_orffinder.faa'
+    log:
+        'output/logs/orffinder_{species}.log'
+    singularity:
+        orffinder_container
+    shell:
+        'ORFfinder '
+        '-in {input} '
+        '-g 11 -s 0 -ml 150 -n true ' ##bacterial translation, ATG only, min. length 150nts, no nested ORFs
+        '-out {output} '
+        '2> {log}'
+
+##############
+## interpro ##
+##############
+
+rule interpro_analysis:
+    input:
+        interpro_res = 'output/interpro/{species}_interproscan.tsv'
+    output:
+        interpro_table = 'output/interpro/{species}_interpro_table.csv'
+    threads:
+        20
+    script:
+        'src/prodigal_interpro.R'
+
+##prodigal adds * as stop codon - need to remove first
+rule interproscan_peptides_viral_contigs:
+    input:
+        peptides_viral_contigs = 'output/interpro/{species}_protein_translations.faa'
+    output:
+        interpro_tsv = 'output/interpro/{species}_interproscan.tsv'
+    threads:
+        20
+    log:
+        'output/logs/{species}/interproscan_peptides_viral_contigs.log'
+    shell:
+        'bin/interproscan-5.51-85.0/interproscan.sh '
+        '--input {input.peptides_viral_contigs} '
+        '--formats TSV '
+        '--outfile {output.interpro_tsv} '
+        '--goterms '
+        '--cpu {threads} '
+        '2> {log}'
 
 ###################################
 ## re-predict viral contig genes ##
@@ -87,28 +227,10 @@ rule blast_prodigal_predictions:
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
 
-rule interproscan_peptides_viral_contigs:
-    input:
-        peptides_viral_contigs = 'output/prodigal/{species}/protein_translations.faa'
-    output:
-        interpro_tsv = 'output/interpro/{species}_interproscan.tsv'
-    threads:
-        20
-    log:
-        'output/logs/{species}/interproscan_peptides_viral_contigs.log'
-    shell:
-        'bin/interproscan-5.51-85.0/interproscan.sh '
-        '--input {input.peptides_viral_contigs} '
-        '--formats TSV '
-        '--outfile {output.interpro_tsv} '
-        '--goterms '
-        '--cpu {threads} '
-        '2> {log}'
-
 ##re-predict viral genes using bacterial translation code
 rule prodigal:
     input:
-        viral_contigs = 'output/nr_analysis_{species}/{species}_viral_contigs.fa'
+        viral_contigs = 'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.faa'
     output:
         protein_translations = 'output/prodigal/{species}/protein_translations.faa',
         nucleotide_seq = 'output/prodigal/{species}/nucleotide_seq.fasta',
@@ -125,14 +247,33 @@ rule prodigal:
         '-f gff '
         '-p meta '
         '-o {output.gene_predictions} '
-        '2> {log} '
+        '2> {log} ' 
 
-rule filter_viral_contigs:
+########################
+## viral contig stats ##
+########################
+
+rule bb_stats:
     input:
-        genome = 'data/final_genomes/{species}.fa',
-        viral_contig_ids = 'output/nr_analysis_{species}/{species}_viral_contig_ids.txt'
+        DNA_virus_contigs = 'output/viral_contigs_blastp/{species}_DNA_virus_contigs.faa'
     output:
-        viral_contigs = 'output/nr_analysis_{species}/{species}_viral_contigs.fa'
+        stats = 'output/bbstats/{species}_bb_stats.out'
+    log:
+        'output/logs/bbstats/{species}_viral_contigs.log'
+    singularity:
+        bbduk_container
+    shell:
+        'stats.sh '
+        'in={input.DNA_virus_contigs} '
+        'out={output.stats} '
+        '2> {log}'
+
+rule filter_DNA_viral_contigs:
+    input:
+        peptide_db = 'data/final_genomes/{species}.fa',
+        DNA_virus_contigs = 'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.txt'
+    output:
+        DNA_virus_contigs = 'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.faa'
     threads:
         20
     singularity:
@@ -141,10 +282,11 @@ rule filter_viral_contigs:
         'output/logs/{species}/filter_viral_contigs.log'
     shell:
         'filterbyname.sh '
-        'in={input.genome} '
+        'in={input.peptide_db} '
         'include=t '
-        'names={input.viral_contig_ids} '
-        'out={output.viral_contigs} '
+        'names={input.DNA_virus_contigs} '
+        'ignorejunk=t '
+        'out={output.DNA_virus_contigs} '
         '&> {log}'  
 
 #############################################
@@ -153,8 +295,8 @@ rule filter_viral_contigs:
 
 rule blastp_viral_contigs_analysis:
     input:
-        viral_contig_blast_res = 'output/nr_analysis_{species}/{species}_blastp_peptides_viral_contigs.outfmt6',
-        nr_viral_blast_res = 'output/nr_analysis_{species}/{species}_nr_blast_viral.csv',
+        viral_contig_blast_res = 'output/viral_contigs_blastp/{species}/{species}_blastp_peptides_viral_contigs.outfmt6',
+        nr_viral_blast_res = 'output/nr_analysis/{species}/{species}_nr_blast_viral.csv',
         gff_file = 'data/final_microctonus_assemblies_annotations/{species}.gff3'
     output:
         full_blast_table = 'output/final_blast_tables/csv/{species}.csv'
@@ -169,9 +311,9 @@ rule blastp_viral_contigs_analysis:
 
 rule blastp_peptides_viral_contigs:
     input:
-        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.faa'
+        peptides_viral_contigs = 'output/viral_contigs_blastp/{species}/{species}_{peptides_viral_contigs.faa}'
     output:
-        blastp_res = 'output/nr_analysis_{species}/{species}_blastp_peptides_viral_contigs.outfmt6'
+        blastp_res = 'output/viral_contigs_blastp/{species}/{species}_blastp_peptides_viral_contigs.outfmt6'
     params:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
@@ -191,9 +333,9 @@ rule blastp_peptides_viral_contigs:
 rule filter_peptides_viral_contigs:
     input:
         peptide_db = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',
-        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.txt'
+        peptides_viral_contigs = 'output/viral_contigs_blastp/{species}/{species}_peptides_viral_contigs.txt'
     output:
-        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.faa'
+        peptides_viral_contigs = 'output/viral_contigs_blastp/{species}/{species}_peptides_viral_contigs.faa'
     threads:
         20
     singularity:
@@ -213,13 +355,15 @@ rule filter_peptides_viral_contigs:
 ##and peptides already ID'd in viral BlastP - no need to Blast again
 rule list_peptides_on_viral_contigs:
     input:
-        viral_peptide_list = 'output/nr_analysis_{species}/{species}_viral_peptides.txt',
+        viral_peptide_list = 'output/nr_analysis/{species}/{species}_viral_peptides.txt',
         gff_file = 'data/final_microctonus_assemblies_annotations/{species}.gff3',
-        hic_scaffold_list = 'data/hi-c_genomes/{species}_hic_scaffold_ids.txt'
+        hic_scaffold_list = 'data/hi-c_genomes/{species}_hic_scaffold_ids.txt',
+        virus_info_table = 'output/nr_analysis/{species}/{species}_nr_blast_viral_plot.csv'
     output:
-        peptides_viral_contigs = 'output/nr_analysis_{species}/{species}_peptides_viral_contigs.txt',
-        contig_counts = 'output/nr_analysis_{species}/{species}_viral_contig_counts.csv',
-        viral_contig_ids = 'output/nr_analysis_{species}/{species}_viral_contig_ids.txt'
+        peptides_viral_contigs = 'output/viral_contigs_blastp/{species}/{species}_peptides_viral_contigs.txt',
+        contig_counts = 'output/viral_contigs_blastp/{species}/{species}_viral_contig_counts.csv',
+        contig_to_viral_genome = 'output/viral_contigs_blastp/{species}/{species}_contig_viral_genome.csv',
+        DNA_virus_contigs = 'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.txt'
     singularity:
         tidyverse_container
     log:
@@ -236,8 +380,8 @@ rule nr_blastp_viral_analysis:
         nr_blastp_res = 'output/nr_blastp/{species}_blastp.outfmt6',
         taxid_list = 'output/taxids/species_virus_taxids.txt'
     output:
-        blastp_viral_res = 'output/nr_analysis_{species}/{species}_nr_blast_viral.csv',
-        viral_peptide_list = 'output/nr_analysis_{species}/{species}_viral_peptides.txt'
+        blastp_viral_res = 'output/nr_analysis/{species}/{species}_nr_blast_viral.csv',
+        viral_peptide_list = 'output/nr_analysis/{species}/{species}_viral_peptides.txt'
     singularity:
         tidyverse_container
     log:
