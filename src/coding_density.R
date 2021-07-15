@@ -22,6 +22,8 @@ sum(!(prodigal_gff$partial=="00"))
 #5 genes are complete but don't start with ATG - viruses only ATG
 
 #33.8% GC content, 66.2% AT (LbFV 78.7% AT)
+#GC content of each contig?
+#depth of each contig?
 
 #50 genes on - strand
 neg_strand <- subset(prodigal_gff, strand=="-")
@@ -32,6 +34,8 @@ sum(neg_strand$nt_length)
 pos_strand <- subset(prodigal_gff, strand=="+")
 #total length = 44.5kb
 sum(pos_strand$nt_length)
+
+##no of genes with bro homology - LbFV has one - what does this mean?
 
 ##repeat content? on edges of contigs?
 

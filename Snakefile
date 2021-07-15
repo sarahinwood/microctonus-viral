@@ -32,7 +32,7 @@ tom_tidyverse_container = 'shub://TomHarrop/singularity-containers:r_3.5.0'
 tidyverse_container = 'docker://rocker/tidyverse'
 bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
 orffinder_container = 'docker://unlhcc/orffinder:0.4.3'
-checkv_container = 'docker://antoniopcamargo/checkv:0.8.1'
+blast_container = 'docker://ncbi/blast:2.12.0'
 
 ##need to run actually using container
 prodigal_container = 'docker://biocontainers/prodigal:v1-2.6.3-4-deb_cv1'
@@ -48,45 +48,26 @@ rule target:
         expand('output/final_blast_tables/csv/{species}.csv', species=['Mh', 'MO', 'FR']),
         ##interproscan results - IR results all on Hi-C contigs so not running
         expand('output/interpro/{species}_interpro_table.csv', species=['Mh', 'MO', 'FR']),
-        ##prodigal predictions - IR only Hi-C scaffolds so not predicting
+        ##prodigal predictions
         expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR']),
         ##DNA virus contig stats
         expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR']),
         ##alternate gene prediction tools & blastP
-        expand('output/alt_gene_preds/orffinder/{species}/{species}_orffinder.faa', species=['Mh', 'MO', 'FR']),
-        expand('output/alt_gene_preds/orffinder/{species}/{species}_orffinder_coords.out', species=['Mh', 'MO', 'FR']),
-        expand('output/alt_gene_preds/getorf/{species}/{species}_getorf_coords.out', species=['Mh']),
-        expand('output/alt_gene_preds/getorf/{species}/getorf_blastp.outfmt6', species=['Mh']),
-        expand('output/alt_gene_preds/orffinder/{species}/orffinder_blastp.outfmt6', species=['Mh']),
-        'output/alt_gene_preds/genemarks/genemarks_blastp.outfmt6',
-        'output/checkv/quality_summary.tsv'
+        'output/alt_gene_preds/orffinder/Mh_orffinder.faa',
+        'output/alt_gene_preds/orffinder/Mh_orffinder_coords.out',
+        'output/alt_gene_preds/getorf/Mh_getorf_coords.out',
+        'output/alt_gene_preds/getorf/Mh_getorf_blastp.outfmt6',
+        'output/alt_gene_preds/orffinder/Mh_orffinder_blastp.outfmt6',
+        'output/alt_gene_preds/genemarks/Mh_genemarks_blastp.outfmt6',
 
-##fails when trying to use docker db
-rule checkv:
-    input:
-        'output/viral_contigs_blastp/Mh/Mh_DNA_virus_contigs.faa'
-    output:
-        'output/checkv/quality_summary.tsv'
-    params:
-        outdir = 'output/checkv',
-        db_dir = 'bin/db/checkv-db-v1.0'
-    threads:
-        20
-    singularity:
-        checkv_container
-    log:
-        'output/logs/checkv.log'
-    shell:
-        'checkv end_to_end '
-        '-d {params.db_dir} '
-        '{input} '
-        '{params.outdir} '
-        '2> {log}'
+##########################
+## Alt. gene prediction ##
+##########################
 
 ##genemarks webtool
 rule blast_genemarks_predictions:
     input:
-        'output/genemarks/genemarks_preds.faa'
+        'output/alt_gene_preds/genemarks/genemarks_preds.faa'
     output:
         blastp_res = 'output/alt_gene_preds/genemarks/genemarks_blastp.outfmt6'
     params:
@@ -94,7 +75,7 @@ rule blast_genemarks_predictions:
     threads:
         20
     log:
-        'output/logs/genemarks_blastp.log'
+        'output/logs/Mh/genemarks_blastp.log'
     shell:
         'blastp '
         '-query {input} '
@@ -105,21 +86,17 @@ rule blast_genemarks_predictions:
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
 
-############
-## getorf ##
-############
-
 rule blast_getorf_predictions:
     input:
-        'output/alt_gene_preds/getorf/{species}/{species}_getorf.fasta'
+        'output/alt_gene_preds/getorf/Mh_getorf.fasta'
     output:
-        blastp_res = 'output/alt_gene_preds/getorf/{species}/getorf_blastp.outfmt6'
+        blastp_res = 'output/alt_gene_preds/getorf/Mh_getorf_blastp.outfmt6'
     params:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         20
     log:
-        'output/logs/{species}/getorf_blastp.log'
+        'output/logs/Mh/getorf_blastp.log'
     shell:
         'blastp '
         '-query {input} '
@@ -132,19 +109,19 @@ rule blast_getorf_predictions:
 
 rule grep_getorf_gene_preds:
     input:
-        'output/alt_gene_preds/getorf/{species}/{species}_getorf.fasta'
+        'output/alt_gene_preds/getorf/Mh_getorf.fasta'
     output:
-        'output/alt_gene_preds/getorf/{species}/{species}_getorf_coords.out'
+        'output/alt_gene_preds/getorf/Mh_getorf_coords.out'
     shell:
         'grep scaffold {input} > {output}'
 
 rule getorf:
     input:
-        'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.faa'
+        'output/viral_contigs_blastp/Mh_DNA_virus_contigs.faa'
     output:
-        'output/alt_gene_preds/getorf/{species}/{species}_getorf.fasta'
+        'output/alt_gene_preds/getorf/Mh_getorf.fasta'
     log:
-        'output/logs/getorf_{species}.log'
+        'output/logs/Mh/getorf.log'
     shell:
         'getorf '
         '-sequence {input} '
@@ -154,21 +131,17 @@ rule getorf:
         '-methionine Yes '
         '2> {log}'     
 
-###############
-## ORFfinder ##
-###############
-
 rule blast_orffinder_predictions:
     input:
-        'output/alt_gene_preds/orffinder/{species}/{species}_orffinder.faa'
+        'output/alt_gene_preds/orffinder/Mh_orffinder.faa'
     output:
-        blastp_res = 'output/alt_gene_preds/orffinder/{species}/orffinder_blastp.outfmt6'
+        blastp_res = 'output/alt_gene_preds/orffinder/Mh_orffinder_blastp.outfmt6'
     params:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         20
     log:
-        'output/logs/{species}/orffinder_blastp.log'
+        'output/logs/Mh/orffinder_blastp.log'
     shell:
         'blastp '
         '-query {input} '
@@ -181,19 +154,19 @@ rule blast_orffinder_predictions:
 
 rule grep_orffinder_gene_preds:
     input:
-        'output/alt_gene_preds/orffinder/{species}/{species}_orffinder.faa'
+        'output/alt_gene_preds/orffinder/Mh_orffinder.faa'
     output:
-        'output/alt_gene_preds/orffinder/{species}/{species}_orffinder_coords.out'
+        'output/alt_gene_preds/orffinder/Mh_orffinder_coords.out'
     shell:
         'grep lcl {input} > {output}'
 
 rule orffinder_fa:
     input:
-        'output/viral_contigs_blastp/{species}/{species}_DNA_virus_contigs.faa'
+        'output/viral_contigs_blastp/Mh_DNA_virus_contigs.faa'
     output:
-        'output/alt_gene_preds/orffinder/{species}/{species}_orffinder.faa'
+        'output/alt_gene_preds/orffinder/Mh_orffinder.faa'
     log:
-        'output/logs/orffinder_{species}.log'
+        'output/logs/Mh/orffinder.log'
     singularity:
         orffinder_container
     shell:
@@ -263,6 +236,8 @@ rule blast_prodigal_predictions:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         20
+    singularity:
+        blast_container
     log:
         'output/logs/{species}/prodigal_blastp.log'
     shell:
@@ -287,8 +262,10 @@ rule prodigal:
         'output/logs/{species}/prodigal.log'
     threads:
         1
+    singularity:
+        prodigal_container
     shell:
-        'bin/Prodigal-2.6.1/prodigal '
+        'prodigal '
         '-i {input.viral_contigs} '
         '-a {output.protein_translations} '
         '-d {output.nucleotide_seq} '
@@ -366,6 +343,8 @@ rule blastp_peptides_viral_contigs:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         20
+    singularity:
+        blast_container
     log:
         'output/logs/{species}/blastp_peptides_viral_contigs.log'
     shell:
@@ -446,6 +425,8 @@ rule blastp_nr:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         50
+    singularity:
+        blast_container
     log:
         'output/logs/{species}/nr_blastp.log'
     shell:
@@ -503,6 +484,8 @@ rule blastp_viral:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         50
+    singularity:
+        blast_container
     log:
         'output/logs/{species}/viral_blastp.log'
     shell:
