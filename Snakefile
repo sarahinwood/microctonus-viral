@@ -51,130 +51,7 @@ rule target:
         ##prodigal predictions
         expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR']),
         ##DNA virus contig stats
-        expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR']),
-        ##alternate gene prediction tools & blastP
-        'output/alt_gene_preds/orffinder/Mh_orffinder.faa',
-        'output/alt_gene_preds/orffinder/Mh_orffinder_coords.out',
-        'output/alt_gene_preds/getorf/Mh_getorf_coords.out',
-        'output/alt_gene_preds/getorf/Mh_getorf_blastp.outfmt6',
-        'output/alt_gene_preds/orffinder/Mh_orffinder_blastp.outfmt6',
-        'output/alt_gene_preds/genemarks/Mh_genemarks_blastp.outfmt6',
-
-##########################
-## Alt. gene prediction ##
-##########################
-
-##genemarks webtool
-rule blast_genemarks_predictions:
-    input:
-        'output/alt_gene_preds/genemarks/genemarks_preds.faa'
-    output:
-        blastp_res = 'output/alt_gene_preds/genemarks/genemarks_blastp.outfmt6'
-    params:
-        blast_db = 'bin/db/blastdb/nr/nr'
-    threads:
-        20
-    log:
-        'output/logs/Mh/genemarks_blastp.log'
-    shell:
-        'blastp '
-        '-query {input} '
-        '-db {params.blast_db} '
-        '-num_threads {threads} '
-        '-evalue 1e-05 '
-        '-max_target_seqs 1 '
-        '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
-        '2> {log}'
-
-rule blast_getorf_predictions:
-    input:
-        'output/alt_gene_preds/getorf/Mh_getorf.fasta'
-    output:
-        blastp_res = 'output/alt_gene_preds/getorf/Mh_getorf_blastp.outfmt6'
-    params:
-        blast_db = 'bin/db/blastdb/nr/nr'
-    threads:
-        20
-    log:
-        'output/logs/Mh/getorf_blastp.log'
-    shell:
-        'blastp '
-        '-query {input} '
-        '-db {params.blast_db} '
-        '-num_threads {threads} '
-        '-evalue 1e-05 '
-        '-max_target_seqs 1 '
-        '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
-        '2> {log}'
-
-rule grep_getorf_gene_preds:
-    input:
-        'output/alt_gene_preds/getorf/Mh_getorf.fasta'
-    output:
-        'output/alt_gene_preds/getorf/Mh_getorf_coords.out'
-    shell:
-        'grep scaffold {input} > {output}'
-
-rule getorf:
-    input:
-        'output/viral_contigs_blastp/Mh_DNA_virus_contigs.faa'
-    output:
-        'output/alt_gene_preds/getorf/Mh_getorf.fasta'
-    log:
-        'output/logs/Mh/getorf.log'
-    shell:
-        'getorf '
-        '-sequence {input} '
-        '-outseq {output} '
-        '-table 11 '
-        '-minsize 300 '
-        '-methionine Yes '
-        '2> {log}'     
-
-rule blast_orffinder_predictions:
-    input:
-        'output/alt_gene_preds/orffinder/Mh_orffinder.faa'
-    output:
-        blastp_res = 'output/alt_gene_preds/orffinder/Mh_orffinder_blastp.outfmt6'
-    params:
-        blast_db = 'bin/db/blastdb/nr/nr'
-    threads:
-        20
-    log:
-        'output/logs/Mh/orffinder_blastp.log'
-    shell:
-        'blastp '
-        '-query {input} '
-        '-db {params.blast_db} '
-        '-num_threads {threads} '
-        '-evalue 1e-05 '
-        '-max_target_seqs 1 '
-        '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
-        '2> {log}'
-
-rule grep_orffinder_gene_preds:
-    input:
-        'output/alt_gene_preds/orffinder/Mh_orffinder.faa'
-    output:
-        'output/alt_gene_preds/orffinder/Mh_orffinder_coords.out'
-    shell:
-        'grep lcl {input} > {output}'
-
-rule orffinder_fa:
-    input:
-        'output/viral_contigs_blastp/Mh_DNA_virus_contigs.faa'
-    output:
-        'output/alt_gene_preds/orffinder/Mh_orffinder.faa'
-    log:
-        'output/logs/Mh/orffinder.log'
-    singularity:
-        orffinder_container
-    shell:
-        'ORFfinder '
-        '-in {input} '
-        '-g 11 -s 0 -ml 150 -n true ' ##bacterial translation, ATG only, min. length 150nts, no nested ORFs
-        '-out {output} '
-        '2> {log}'
+        expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR'])
 
 ##############
 ## interpro ##
@@ -227,6 +104,7 @@ rule prodigal_blastp_analysis:
     script:
         'src/prodigal_blastp_analysis.R'
 
+##Do I run this step again with lower evalue threshold for all 3 species?
 rule blast_prodigal_predictions:
     input:
         prodigal = 'output/prodigal/{species}/protein_translations.faa'
@@ -246,7 +124,6 @@ rule blast_prodigal_predictions:
         '-db {params.blast_db} '
         '-num_threads {threads} '
         '-evalue 1e-05 '
-        '-max_target_seqs 1 '
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
 
