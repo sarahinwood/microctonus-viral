@@ -46,45 +46,10 @@ rule target:
         ##recip blast -> all peptides on viral scaffolds blast results
         expand('output/viral_contigs_blastp/{species}/{species}_blastp_peptides_viral_contigs.outfmt6', species=all_species),
         expand('output/final_blast_tables/csv/{species}.csv', species=['Mh', 'MO', 'FR']),
-        ##interproscan results - IR results all on Hi-C contigs so not running
-        expand('output/interpro/{species}_interpro_table.csv', species=['Mh', 'MO', 'FR']),
-        ##prodigal predictions
+        ##prodigal predictions - IR results all on Hi-C contigs so not running
         expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR']),
         ##DNA virus contig stats
         expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR'])
-
-##############
-## interpro ##
-##############
-
-rule interpro_analysis:
-    input:
-        interpro_res = 'output/interpro/{species}_interproscan.tsv'
-    output:
-        interpro_table = 'output/interpro/{species}_interpro_table.csv'
-    threads:
-        20
-    script:
-        'src/prodigal_interpro.R'
-
-##prodigal adds * as stop codon - need to remove first
-rule interproscan_peptides_viral_contigs:
-    input:
-        peptides_viral_contigs = 'output/interpro/{species}_protein_translations.faa'
-    output:
-        interpro_tsv = 'output/interpro/{species}_interproscan.tsv'
-    threads:
-        20
-    log:
-        'output/logs/{species}/interproscan_peptides_viral_contigs.log'
-    shell:
-        'bin/interproscan-5.51-85.0/interproscan.sh '
-        '--input {input.peptides_viral_contigs} '
-        '--formats TSV '
-        '--outfile {output.interpro_tsv} '
-        '--goterms '
-        '--cpu {threads} '
-        '2> {log}'
 
 ###################################
 ## re-predict viral contig genes ##
@@ -255,6 +220,8 @@ rule filter_peptides_viral_contigs:
         'out={output.peptides_viral_contigs} '
         '&> {log}'  
 
+## could probably use editing the rule below here to tidy up ##
+
 ##removes scaffolds that are main-genome from hic to avoid blasting every gene on them
 ##and peptides already ID'd in viral BlastP - no need to Blast again
 rule list_peptides_on_viral_contigs:
@@ -293,6 +260,7 @@ rule nr_blastp_viral_analysis:
     script:
         'src/nr_blastp_viral_analysis.R'
 
+##nr blast to remove peptides with better non-viral hits
 rule blastp_nr:
     input:
         pot_viral_peptides = 'output/viral_blastp/{species}_potential_viral_peptides.faa'
@@ -316,6 +284,7 @@ rule blastp_nr:
         '-outfmt "6 std staxids salltitles" > {output.blastp_res} '
         '2> {log}'
 
+##filter peptides with viral hits
 rule filter_pot_viral_peptides:
     input:
         peptide_db = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',
@@ -351,6 +320,7 @@ rule filter_pot_viral_peptide_ids:
     script:
         'src/peptide_hit_id_lists.R'
 
+##blast against viral database
 rule blastp_viral:
     input:
         query = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',

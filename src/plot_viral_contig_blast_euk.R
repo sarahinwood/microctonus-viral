@@ -24,7 +24,8 @@ plot_euk <- ggplot(families, aes(x=species, y=n, fill=reorder(family, n)))+
   labs(fill="Eukaryotic families")+
   guides(fill = guide_legend(reverse = TRUE))+
   coord_flip()+
-  theme(axis.text.y = element_text(hjust = 1, face = "italic"))+ylim(0,12)
+  theme(axis.text.y = element_text(hjust = 1, face = "italic"))+
+  scale_y_continuous(breaks=c(0,2,4,6,8,10,12))
 
 ##need to save as svg and edit in inkscape to un-italicise French, Moroccan
 ggsave(file="output/final_blast_tables/eukaryotic_families.svg", plot=plot_euk, width=8, height=4)

@@ -7,9 +7,9 @@ blast_res_files <- list.files(path="output", pattern="*blastp_gff_plot.csv",
                               full.names=TRUE, recursive=TRUE)
 ##read into single table for plotting
 tables <- lapply(blast_res_files, fread)
-full_table <- do.call(rbind, tables)
-outliers <- list("scaffold_90", "scaffold_995", "scf1605")
-full_table_no <- subset(full_table, !(scaffold_id %in% outliers))
+full_table_no <- do.call(rbind, tables)
+#outliers <- list("scaffold_90", "scaffold_995", "scf1605")
+#full_table_no <- subset(full_table, !(scaffold_id %in% outliers))
 ##count no. of each viral family
 families <- count(full_table_no, family, species, euk_or_pro, sort=TRUE)
 
