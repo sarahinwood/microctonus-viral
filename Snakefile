@@ -31,10 +31,7 @@ all_species = pep.sample_table['sample_name']
 tom_tidyverse_container = 'shub://TomHarrop/singularity-containers:r_3.5.0'
 tidyverse_container = 'docker://rocker/tidyverse'
 bbduk_container = 'shub://TomHarrop/singularity-containers:bbmap_38.00'
-orffinder_container = 'docker://unlhcc/orffinder:0.4.3'
 blast_container = 'docker://ncbi/blast:2.12.0'
-
-##need to run actually using container
 prodigal_container = 'docker://biocontainers/prodigal:v1-2.6.3-4-deb_cv1'
 
 #########
@@ -43,13 +40,94 @@ prodigal_container = 'docker://biocontainers/prodigal:v1-2.6.3-4-deb_cv1'
 
 rule target:
     input:
-        ##recip blast -> all peptides on viral scaffolds blast results
+        ## reciprocal blast to ID viral protein predictions, and all predicted proteins on viral scaffolds
         expand('output/viral_contigs_blastp/{species}/{species}_blastp_peptides_viral_contigs.outfmt6', species=all_species),
         expand('output/final_blast_tables/csv/{species}.csv', species=['Mh', 'MO', 'FR']),
-        ##prodigal predictions - IR results all on Hi-C contigs so not running
+        ## Perform gene prediction on putatively viral contigs with prodigal (IR results all on Hi-C contigs so not included)
         expand('output/prodigal/{species}/blastp_gff.csv', species=['Mh', 'MO', 'FR']),
-        ##DNA virus contig stats
-        expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR'])
+        ## calculate DNA virus contig statistics
+        expand('output/bbstats/{species}_bb_stats.out', species=['Mh', 'MO', 'FR']),
+        # filtering Mh genome assembly to remove identified virus contigs
+        'output/Mh_genome_no_virus/Mh_genome_no_virus.fasta',
+        'output/Mh_genome_no_virus/Mh_proteins_no_virus.fasta',
+        'output/Mh_genome_no_virus/Mh_mrna-transcripts_no_virus.fasta',
+        'output/Mh_genome_no_virus/Mh_no_virus.gff3'
+
+#############################
+## filter hyperodae genome ##
+#############################
+
+rule filter_Mh_gff:
+    input:
+        gff3 = 'data/final_microctonus_assemblies_annotations/Mh.gff3',
+        viral_ids = 'data/Mh_viral_peptides.txt'
+    output:
+        'output/Mh_genome_no_virus/Mh_no_virus.gff3'
+    shell:
+        'grep -v -f {input.viral_ids} {input.gff3} > {output}'
+
+rule filter_Mh_transcripts:
+    input:
+        fasta = 'data/final_microctonus_assemblies_annotations/Mh.mrna-transcripts.fa',
+        viral_ids = 'data/Mh_viral_peptides.txt'
+    output:
+        fasta = 'output/Mh_genome_no_virus/Mh_mrna-transcripts_no_virus.fasta'
+    threads:
+        20
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/Mh/filter_Mh_proteins.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.fasta} '
+        'include=f '
+        'names={input.viral_ids} '
+        'ignorejunk=t '
+        'out={output.fasta} '
+        '&> {log}'
+
+rule filter_Mh_proteins:
+    input:
+        fasta = 'data/Mh.proteins.fa',
+        viral_ids = 'data/Mh_viral_peptides.txt'
+    output:
+        fasta = 'output/Mh_genome_no_virus/Mh_proteins_no_virus.fasta'
+    threads:
+        20
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/Mh/filter_Mh_proteins.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.fasta} '
+        'include=f '
+        'names={input.viral_ids} '
+        'ignorejunk=t '
+        'out={output.fasta} '
+        '&> {log}' 
+
+rule filter_Mh_genome:
+    input:
+        fasta = 'data/Mh.fa',
+        viral_ids = 'data/Mh_viral_contig_ids.txt'
+    output:
+        fasta = 'output/Mh_genome_no_virus/Mh_genome_no_virus.fasta'
+    threads:
+        20
+    singularity:
+        bbduk_container
+    log:
+        'output/logs/Mh/filter_Mh_genome.log'
+    shell:
+        'filterbyname.sh '
+        'in={input.fasta} '
+        'include=f '
+        'names={input.viral_ids} '
+        'ignorejunk=t '
+        'out={output.fasta} '
+        '&> {log}'  
 
 ###################################
 ## re-predict viral contig genes ##
@@ -307,7 +385,6 @@ rule filter_pot_viral_peptides:
         'out={output.pot_viral_peptides} '
         '&> {log}'
 
-##rename script to match rule
 rule filter_pot_viral_peptide_ids:
     input:
         blastp_res = 'output/viral_blastp/{species}_blastp.outfmt6'
@@ -321,7 +398,7 @@ rule filter_pot_viral_peptide_ids:
         'src/peptide_hit_id_lists.R'
 
 ##blast against viral database
-rule blastp_viral:
+rule blastn_viral:
     input:
         query = 'data/final_microctonus_assemblies_annotations/{species}.proteins.fa',
         taxid_list = 'output/taxids/species_virus_taxids.txt'
@@ -331,8 +408,8 @@ rule blastp_viral:
         blast_db = 'bin/db/blastdb/nr/nr'
     threads:
         50
-    singularity:
-        blast_container
+    #singularity:
+    #    blast_container
     log:
         'output/logs/{species}/viral_blastp.log'
     shell:
